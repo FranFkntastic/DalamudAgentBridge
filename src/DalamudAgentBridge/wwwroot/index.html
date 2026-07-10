@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dalamud Agent Bridge</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">LOCAL CONTROL SURFACE</p>
+        <h1>Dalamud Agent Bridge</h1>
+        <p class="subtitle">Discover, inspect, and safely control bridge-enabled Dalamud plugins.</p>
+      </div>
+      <button id="refreshBridges" class="secondary">Refresh instances</button>
+    </header>
+
+    <section class="instance-bar">
+      <label for="bridgeSelect">Active instance</label>
+      <select id="bridgeSelect"></select>
+      <span id="connectionState" class="badge">Discovering</span>
+    </section>
+
+    <section class="grid">
+      <article class="panel span-2">
+        <div class="panel-title">
+          <div><p class="eyebrow">LIVE MIRROR</p><h2>Plugin state</h2></div>
+          <button id="refreshSnapshot" class="secondary">Refresh snapshot</button>
+        </div>
+        <div id="identity" class="identity"></div>
+        <div id="routeState" class="route-state"></div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">WINDOW CONTROL</p>
+        <h2>In-game surfaces</h2>
+        <div class="button-stack">
+          <button data-command="open-main-window">Open MMF</button>
+          <button data-command="open-acquisition-diagnostics">Open acquisition diagnostics</button>
+          <button id="captureProof">Capture proof window</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">TAB CONTROL</p>
+        <h2>Main window</h2>
+        <div id="tabButtons" class="button-grid"></div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">SAFE ACTIONS</p>
+        <h2>Diagnostics and cleanup</h2>
+        <div class="button-stack">
+          <button data-command="capture-input-state">Capture market input state</button>
+          <button data-command="stop-route" class="danger">Stop active route</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">PROOF RECEIPT</p>
+        <h2>Rendered acknowledgement</h2>
+        <dl id="proofReceipt" class="facts"><div><dt>Status</dt><dd>No proof loaded</dd></div></dl>
+      </article>
+
+      <article class="panel span-2">
+        <p class="eyebrow">COMMAND LOG</p>
+        <h2>Session activity</h2>
+        <pre id="activityLog">Waiting for bridge discovery…</pre>
+      </article>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
