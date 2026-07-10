@@ -14,6 +14,9 @@ Open `http://127.0.0.1:45831`.
 
 Use `-NoBuild` after the first run when no source files have changed.
 
+The normal build also creates a private, loopback-only Dalamud repository at
+`http://127.0.0.1:45831/repository/repo.json`. Add that URL under Dalamud Settings → Experimental → Custom Plugin Repositories. The source repository remains private; no GitHub token is placed in Dalamud configuration.
+
 ## Safety boundary
 
 - Binds to `127.0.0.1` only.

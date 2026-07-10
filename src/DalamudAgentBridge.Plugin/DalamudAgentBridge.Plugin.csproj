@@ -1,0 +1,23 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Platforms>x64</Platforms>
+    <OutputPath>bin\$(Configuration)</OutputPath>
+    <Name>DalamudAgentBridge</Name>
+    <AssemblyName>DalamudAgentBridge</AssemblyName>
+    <Author>FranFkntastic</Author>
+    <Description>In-game connector for the local Dalamud Agent Bridge control and inspection utility.</Description>
+    <Punchline>Local agent control and inspection connector.</Punchline>
+    <RepoUrl>https://github.com/FranFkntastic/DalamudAgentBridge</RepoUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="DalamudAgentBridge.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

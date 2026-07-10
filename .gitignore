@@ -2,4 +2,5 @@ bin/
 obj/
 .vs/
 .run/
+src/DalamudAgentBridge/wwwroot/repository/
 *.user
