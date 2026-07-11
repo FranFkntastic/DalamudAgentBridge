@@ -88,6 +88,7 @@ app.MapPost("/api/bridges/{id}/commands/{command}", async (
 app.MapPost("/api/bridges/{id}/captures", async (
     string id,
     HttpContext httpContext,
+    BridgeCommandRequest? request,
     BridgeRegistry registry,
     NamedPipeBridgeClient client,
     CancellationToken cancellationToken) =>
@@ -98,7 +99,7 @@ app.MapPost("/api/bridges/{id}/captures", async (
 
     try
     {
-        var response = await client.SendAsync(instance, "capture-screen", null, cancellationToken);
+        var response = await client.SendAsync(instance, "capture-screen", request, cancellationToken);
         if (!response.Success || response.Receipt is not { } receiptElement)
             return Results.BadRequest(response);
 
