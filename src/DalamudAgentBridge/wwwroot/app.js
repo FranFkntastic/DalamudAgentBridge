@@ -156,6 +156,40 @@ async function captureCompositedWindow() {
   finally { button.disabled = false; }
 }
 
+async function captureUnfocusedReview() {
+  if (!activeBridgeId) return;
+  const button = document.querySelector('#captureUnfocused');
+  button.disabled = true;
+  try {
+    elements.captureMeta.textContent = 'Preparing a frame-confirmed plugin presentation…';
+    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/unfocused-review-capture-requests`, { method: 'POST' });
+    const body = await response.json();
+    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Unfocused review capture could not start');
+    const result = await awaitUnfocusedCapture(body.request);
+    activeReviewId = result.review?.id ?? '';
+    await displayReview(result.imageUrl);
+    const receipt = result.receipt;
+    elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${receipt.captureMethod} · frame ${receipt.frameId} · ${new Date(receipt.capturedAtUtc).toLocaleString()}`;
+    log(`unfocused review: ${result.message}`, receipt);
+    await refreshSnapshot();
+  } catch (error) { log(error.message); elements.captureMeta.textContent = error.message; }
+  finally { button.disabled = false; }
+}
+
+async function awaitUnfocusedCapture(request) {
+  while (new Date(request.expiresAtUtc) > new Date()) {
+    elements.captureMeta.textContent = request.message;
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const response = await fetch(`/api/unfocused-review-capture-requests/${encodeURIComponent(request.requestId)}`, { cache: 'no-store' });
+    const body = await response.json();
+    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Unfocused review capture was lost');
+    request = body.request;
+    if (request.state === 'completed') return request;
+    if (request.state === 'failed') throw new Error(request.message);
+  }
+  throw new Error('Unfocused review capture expired before completion');
+}
+
 async function awaitCompositedCapture(request) {
   while (new Date(request.expiresAtUtc) > new Date()) {
     await new Promise(resolve => setTimeout(resolve, 150));
@@ -193,6 +227,7 @@ async function restoreLatestReview() {
 document.querySelector('#captureScreen').addEventListener('click', () => captureScreen(false));
 document.querySelector('#captureContext').addEventListener('click', () => captureScreen(true));
 document.querySelector('#captureComposited').addEventListener('click', captureCompositedWindow);
+document.querySelector('#captureUnfocused').addEventListener('click', captureUnfocusedReview);
 document.querySelector('#clearCapture').addEventListener('click', async () => {
   if (!activeReviewId) return;
   const response = await fetch(`/api/reviews/${encodeURIComponent(activeReviewId)}`, { method: 'DELETE' });

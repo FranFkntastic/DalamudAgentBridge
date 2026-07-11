@@ -19,13 +19,16 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<object> createControlSurface;
     private readonly Func<string, long, AgentBridgeUiControlInvocation> invokeControl;
     private readonly Action openWindow;
+    private readonly Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation;
+    private readonly Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation;
+    private readonly Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation;
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly JsonSerializerOptions jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private CancellationTokenSource? cancellation;
     private Task? listenTask;
     private string? accessToken;
 
-    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
+    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
     {
         this.configuration = configuration;
         this.configDirectory = configDirectory;
@@ -34,6 +37,9 @@ public sealed class AgentBridgeHost : IDisposable
         this.createControlSurface = createControlSurface;
         this.invokeControl = invokeControl;
         this.openWindow = openWindow;
+        this.beginCapturePresentation = beginCapturePresentation;
+        this.completeCapturePresentation = completeCapturePresentation;
+        this.cancelCapturePresentation = cancelCapturePresentation;
         this.captureViewport = captureViewport;
     }
 
@@ -96,6 +102,30 @@ public sealed class AgentBridgeHost : IDisposable
             case "open-main-window":
                 await dispatchOnFramework(openWindow).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Agent Bridge window opened.");
+            case "begin-capture-presentation":
+                if (!configuration.EnableScreenshots) return AgentBridgeResponse.Fail("Agent Bridge screenshots are disabled in the in-game plugin settings.");
+                if (!string.Equals(request.Target, "bridge.main-window", StringComparison.Ordinal)) return AgentBridgeResponse.Fail("The requested capture presentation target is not registered.");
+                AgentBridgeUiCaptureTransactionHandle? handle = null;
+                try
+                {
+                    await dispatchOnFramework(() => handle = beginCapturePresentation(request.Target!)).ConfigureAwait(false);
+                    var ready = await handle!.Ready.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    return AgentBridgeResponse.Ok("Capture presentation rendered and ready.", ready);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or OperationCanceledException)
+                {
+                    if (handle != null)
+                        await dispatchOnFramework(() => cancelCapturePresentation(handle.TransactionId)).ConfigureAwait(false);
+                    return AgentBridgeResponse.Fail($"Capture presentation failed: {ex.Message}");
+                }
+            case "complete-capture-presentation":
+            case "cancel-capture-presentation":
+                if (string.IsNullOrWhiteSpace(request.TransactionId)) return AgentBridgeResponse.Fail("A capture transaction identifier is required.");
+                AgentBridgeUiCaptureTransactionResult? result = null;
+                await dispatchOnFramework(() => result = string.Equals(request.Command, "complete-capture-presentation", StringComparison.OrdinalIgnoreCase)
+                    ? completeCapturePresentation(request.TransactionId)
+                    : cancelCapturePresentation(request.TransactionId)).ConfigureAwait(false);
+                return result!.Success ? AgentBridgeResponse.Ok(result.Message, result) : AgentBridgeResponse.Fail(result.Message);
             case "capture-screen":
                 if (!configuration.EnableScreenshots) return AgentBridgeResponse.Fail("Agent Bridge screenshots are disabled in the in-game plugin settings.");
                 if (!string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("This independent bridge has no plugin-specific target surfaces.");
