@@ -65,6 +65,16 @@
       </article>
 
       <article class="panel span-2">
+        <div class="panel-title">
+          <div><p class="eyebrow">RENDERED VIEW</p><h2>Actual in-game viewport</h2></div>
+          <button id="captureScreen">Capture current frame</button>
+        </div>
+        <div id="captureMeta" class="capture-meta">No rendered frame captured yet.</div>
+        <p class="privacy-note">Captures contain the complete FFXIV viewport, including visible chat and other plugin windows. Images remain loopback-only and the plugin retains at most 20 captures.</p>
+        <div class="capture-stage"><a id="captureLink" target="_blank" rel="noopener"><img id="captureImage" alt="Latest rendered FFXIV viewport capture"></a></div>
+      </article>
+
+      <article class="panel span-2">
         <p class="eyebrow">COMMAND LOG</p>
         <h2>Session activity</h2>
         <pre id="activityLog">Waiting for bridge discovery…</pre>

@@ -37,6 +37,18 @@ public sealed record BridgeCommandRequest
     public string? ProofId { get; init; }
 }
 
+public sealed record BridgeCaptureReceipt
+{
+    public int SchemaVersion { get; init; }
+    public string CaptureId { get; init; } = string.Empty;
+    public string FileName { get; init; } = string.Empty;
+    public DateTimeOffset CapturedAtUtc { get; init; }
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public string Sha256 { get; init; } = string.Empty;
+    public int ProcessId { get; init; }
+}
+
 public sealed record PluginBridgeRequest
 {
     public required string Token { get; init; }

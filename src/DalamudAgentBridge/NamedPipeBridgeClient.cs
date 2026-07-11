@@ -22,7 +22,9 @@ public sealed class NamedPipeBridgeClient
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(DefaultTimeout);
+        timeout.CancelAfter(string.Equals(command, "capture-screen", StringComparison.OrdinalIgnoreCase)
+            ? TimeSpan.FromSeconds(15)
+            : DefaultTimeout);
         await using var pipe = new NamedPipeClientStream(
             ".",
             instance.PipeName,

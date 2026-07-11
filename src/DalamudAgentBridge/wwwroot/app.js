@@ -5,6 +5,9 @@ const elements = {
   routeState: document.querySelector('#routeState'),
   proofReceipt: document.querySelector('#proofReceipt'),
   activityLog: document.querySelector('#activityLog'),
+  captureImage: document.querySelector('#captureImage'),
+  captureMeta: document.querySelector('#captureMeta'),
+  captureLink: document.querySelector('#captureLink'),
 };
 let bridges = [];
 let activeBridgeId = '';
@@ -88,6 +91,28 @@ document.querySelectorAll('[data-tab]').forEach(button => button.addEventListene
 document.querySelector('#captureProof').addEventListener('click', async () => {
   const challenge = `bridge-ui-${Date.now()}`;
   try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); }
+});
+document.querySelector('#captureScreen').addEventListener('click', async () => {
+  if (!activeBridgeId) return;
+  const button = document.querySelector('#captureScreen');
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, { method: 'POST' });
+    const body = await response.json();
+    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Capture failed');
+    const receipt = body.receipt;
+    const captureUrl = `${body.imageUrl}?v=${encodeURIComponent(receipt.sha256)}`;
+    elements.captureImage.src = captureUrl;
+    elements.captureLink.href = captureUrl;
+    elements.captureImage.classList.add('ready');
+    elements.captureMeta.textContent = `${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
+    log(`capture-screen: ${body.message}`, receipt);
+  } catch (error) {
+    log(error.message);
+    elements.captureMeta.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 });
 
 discover().catch(error => log(error.message));
