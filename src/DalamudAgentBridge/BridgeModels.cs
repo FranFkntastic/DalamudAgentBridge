@@ -35,6 +35,7 @@ public sealed record BridgeCommandRequest
     public string? Target { get; init; }
     public string? Challenge { get; init; }
     public string? ProofId { get; init; }
+    public bool FullViewport { get; init; }
 }
 
 public sealed record BridgeCaptureReceipt
@@ -47,6 +48,7 @@ public sealed record BridgeCaptureReceipt
     public int Height { get; init; }
     public string Sha256 { get; init; } = string.Empty;
     public int ProcessId { get; init; }
+    public string Scope { get; init; } = string.Empty;
 }
 
 public sealed record PluginBridgeRequest
@@ -56,6 +58,7 @@ public sealed record PluginBridgeRequest
     public string? Target { get; init; }
     public string? Challenge { get; init; }
     public string? ProofId { get; init; }
+    public bool FullViewport { get; init; }
 }
 
 public sealed record PluginBridgeResponse

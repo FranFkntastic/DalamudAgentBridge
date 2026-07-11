@@ -41,6 +41,7 @@ public sealed class NamedPipeBridgeClient
             Target = request?.Target,
             Challenge = request?.Challenge,
             ProofId = request?.ProofId,
+            FullViewport = request?.FullViewport ?? false,
         };
         await writer.WriteLineAsync(JsonSerializer.Serialize(payload, jsonOptions)).ConfigureAwait(false);
         var responseJson = await reader.ReadLineAsync(timeout.Token).ConfigureAwait(false);

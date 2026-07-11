@@ -67,10 +67,10 @@
       <article class="panel span-2">
         <div class="panel-title">
           <div><p class="eyebrow">RENDERED VIEW</p><h2>Actual in-game viewport</h2></div>
-          <button id="captureScreen">Capture current frame</button>
+          <div class="capture-actions"><button id="captureScreen">Capture MMF window</button><button id="captureContext" class="secondary">Capture full context</button></div>
         </div>
         <div id="captureMeta" class="capture-meta">No rendered frame captured yet.</div>
-        <p class="privacy-note">Captures are MMF-window-only, encrypted during local handoff, then held in memory for one view or 45 seconds. They are never linked, cached, or retained by the bridge.</p>
+        <p class="privacy-note">Captures are encrypted during local handoff, then held in memory for one view or 45 seconds. “Full context” deliberately includes the complete FFXIV viewport; neither mode is linked, cached, or retained by the bridge.</p>
         <div class="capture-stage"><img id="captureImage" alt="Latest rendered MMF window capture"></div>
       </article>
 

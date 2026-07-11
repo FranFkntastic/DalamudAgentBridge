@@ -92,12 +92,14 @@ document.querySelector('#captureProof').addEventListener('click', async () => {
   const challenge = `bridge-ui-${Date.now()}`;
   try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); }
 });
-document.querySelector('#captureScreen').addEventListener('click', async () => {
+async function captureScreen(fullViewport) {
   if (!activeBridgeId) return;
-  const button = document.querySelector('#captureScreen');
+  const button = fullViewport ? document.querySelector('#captureContext') : document.querySelector('#captureScreen');
   button.disabled = true;
   try {
-    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, { method: 'POST' });
+    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport }),
+    });
     const body = await response.json();
     if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Capture failed');
     const receipt = body.receipt;
@@ -108,7 +110,7 @@ document.querySelector('#captureScreen').addEventListener('click', async () => {
     captureObjectUrl = URL.createObjectURL(imageBlob);
     elements.captureImage.src = captureObjectUrl;
     elements.captureImage.classList.add('ready');
-    elements.captureMeta.textContent = `${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
+    elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
     log(`capture-screen: ${body.message}`);
   } catch (error) {
     log(error.message);
@@ -116,7 +118,9 @@ document.querySelector('#captureScreen').addEventListener('click', async () => {
   } finally {
     button.disabled = false;
   }
-});
+}
+document.querySelector('#captureScreen').addEventListener('click', () => captureScreen(false));
+document.querySelector('#captureContext').addEventListener('click', () => captureScreen(true));
 window.addEventListener('beforeunload', () => { if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl); });
 
 discover().catch(error => log(error.message));
