@@ -20,8 +20,10 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AgentBridgeViewportCaptureService viewportCapture;
     private readonly AgentBridgeHost bridgeHost;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
+    private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private int windowOpenState;
-    private int uncollapseWindowState;
+    private int requestedCollapsedState;
+    private int windowCollapsedState;
     private AgentBridgeViewportRegion? captureRegion;
 
     public Plugin(
@@ -38,6 +40,11 @@ public sealed class Plugin : IDalamudPlugin
         this.framework = framework;
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         configuration.Initialize(pluginInterface);
+        captureTransactions = new AgentBridgeUiCaptureTransactionManager(
+            () => WindowOpen,
+            value => WindowOpen = value,
+            () => WindowCollapsed,
+            RequestWindowCollapsed);
         viewportCapture = new AgentBridgeViewportCaptureService(
             pluginInterface.GetPluginConfigDirectory(),
             configuration.PluginInstanceId,
@@ -53,6 +60,9 @@ public sealed class Plugin : IDalamudPlugin
             () => reviewRegistry.Snapshot(),
             (controlId, frameId) => reviewRegistry.Invoke(controlId, frameId),
             OpenWindow,
+            target => captureTransactions.Begin(target),
+            transactionId => captureTransactions.Complete(transactionId),
+            transactionId => captureTransactions.Cancel(transactionId),
             viewportCapture.CaptureAsync);
         bridgeHost.Start();
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -66,6 +76,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        captureTransactions.CancelActive();
         bridgeHost.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
@@ -79,6 +90,12 @@ public sealed class Plugin : IDalamudPlugin
         set => Volatile.Write(ref windowOpenState, value ? 1 : 0);
     }
 
+    private bool WindowCollapsed
+    {
+        get => Volatile.Read(ref windowCollapsedState) != 0;
+        set => Volatile.Write(ref windowCollapsedState, value ? 1 : 0);
+    }
+
     private void OnCommand(string command, string arguments) => RequestWindowOpen();
 
     private void OpenWindow() => RequestWindowOpen();
@@ -86,14 +103,20 @@ public sealed class Plugin : IDalamudPlugin
     private void RequestWindowOpen()
     {
         WindowOpen = true;
-        Interlocked.Exchange(ref uncollapseWindowState, 1);
+        RequestWindowCollapsed(false);
     }
+
+    private void RequestWindowCollapsed(bool collapsed) =>
+        Interlocked.Exchange(ref requestedCollapsedState, collapsed ? 1 : 2);
 
     private void Draw()
     {
         reviewRegistry.BeginFrame();
+        AgentBridgeUiReviewFrame? frame = null;
         try { DrawCore(); }
-        finally { reviewRegistry.EndFrame(); }
+        finally { frame = reviewRegistry.EndFrame(); }
+        if (captureRegion != null && frame != null && captureTransactions.ShouldPresentInMainViewport("bridge.main-window"))
+            captureTransactions.MarkRendered("bridge.main-window", frame.FrameId);
     }
 
     private void DrawCore()
@@ -104,16 +127,21 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        if (Interlocked.Exchange(ref uncollapseWindowState, 0) != 0)
-            ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always);
-        var mainViewport = ImGui.GetMainViewport();
-        ImGui.SetNextWindowViewport(mainViewport.ID);
-        ImGui.SetNextWindowPos(mainViewport.WorkPos + new Vector2(16, 16), ImGuiCond.Always);
+        var collapsedRequest = Interlocked.Exchange(ref requestedCollapsedState, 0);
+        if (collapsedRequest != 0)
+            ImGui.SetNextWindowCollapsed(collapsedRequest == 1, ImGuiCond.Always);
+        if (captureTransactions.ShouldPresentInMainViewport("bridge.main-window"))
+        {
+            var mainViewport = ImGui.GetMainViewport();
+            ImGui.SetNextWindowViewport(mainViewport.ID);
+            ImGui.SetNextWindowPos(mainViewport.WorkPos + new Vector2(16, 16), ImGuiCond.Always);
+        }
         ImGui.SetNextWindowSize(new Vector2(620, 280), ImGuiCond.FirstUseEver);
         var windowOpen = WindowOpen;
         if (!ImGui.Begin("Dalamud Agent Bridge##DalamudAgentBridge", ref windowOpen))
         {
             WindowOpen = windowOpen;
+            WindowCollapsed = ImGui.IsWindowCollapsed();
             captureRegion = null;
             ImGui.End();
             return;
@@ -145,7 +173,7 @@ public sealed class Plugin : IDalamudPlugin
             configuration.EnableScreenshots ? "Enabled" : "Disabled",
             ToggleScreenshotHandoff);
         ImGui.Spacing();
-        ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This plugin provides its own viewport capture; it does not require MarketMafioso.");
+        ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This standalone plugin provides its own reviewed capture surface.");
             captureRegion = new AgentBridgeViewportRegion(
             ImGui.GetWindowPos(),
             ImGui.GetWindowSize(),
@@ -153,6 +181,7 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.GetMainViewport().Size,
             DateTimeOffset.UtcNow);
         ImGui.End();
+        WindowCollapsed = false;
         WindowOpen = windowOpen;
     }
 
@@ -178,7 +207,7 @@ public sealed class Plugin : IDalamudPlugin
         currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
         bridgeWindowOpen = WindowOpen,
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "invoke-control" },
+        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "invoke-control", "capture-presentation-transaction" },
         screenshotsEnabled = configuration.EnableScreenshots,
     };
 }

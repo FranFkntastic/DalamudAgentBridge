@@ -37,6 +37,7 @@ public sealed record BridgeCommandRequest
     public string? Challenge { get; init; }
     public string? ProofId { get; init; }
     public bool FullViewport { get; init; }
+    public string? TransactionId { get; init; }
 }
 
 public sealed record BridgeCaptureReceipt
@@ -50,6 +51,10 @@ public sealed record BridgeCaptureReceipt
     public string Sha256 { get; init; } = string.Empty;
     public int ProcessId { get; init; }
     public string Scope { get; init; } = string.Empty;
+    public string? CaptureMethod { get; init; }
+    public string? TargetPlugin { get; init; }
+    public string? TransactionId { get; init; }
+    public long? FrameId { get; init; }
 }
 
 public sealed record PluginBridgeRequest
@@ -61,7 +66,16 @@ public sealed record PluginBridgeRequest
     public string? Challenge { get; init; }
     public string? ProofId { get; init; }
     public bool FullViewport { get; init; }
+    public string? TransactionId { get; init; }
 }
+
+public sealed record BridgeCaptureTransactionReceipt(
+    string TransactionId,
+    string Target,
+    long FrameId,
+    DateTimeOffset RequestedAtUtc,
+    DateTimeOffset ReadyAtUtc,
+    DateTimeOffset ExpiresAtUtc);
 
 public sealed record PluginBridgeResponse
 {

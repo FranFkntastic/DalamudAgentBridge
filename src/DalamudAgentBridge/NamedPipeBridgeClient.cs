@@ -22,9 +22,12 @@ public sealed class NamedPipeBridgeClient
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(string.Equals(command, "capture-screen", StringComparison.OrdinalIgnoreCase)
-            ? TimeSpan.FromSeconds(15)
-            : DefaultTimeout);
+        timeout.CancelAfter(command.ToLowerInvariant() switch
+        {
+            "capture-screen" => TimeSpan.FromSeconds(15),
+            "begin-capture-presentation" => TimeSpan.FromSeconds(10),
+            _ => DefaultTimeout,
+        });
         await using var pipe = new NamedPipeClientStream(
             ".",
             instance.PipeName,
@@ -43,6 +46,7 @@ public sealed class NamedPipeBridgeClient
             Challenge = request?.Challenge,
             ProofId = request?.ProofId,
             FullViewport = request?.FullViewport ?? false,
+            TransactionId = request?.TransactionId,
         };
         await writer.WriteLineAsync(JsonSerializer.Serialize(payload, jsonOptions)).ConfigureAwait(false);
         var responseJson = await reader.ReadLineAsync(timeout.Token).ConfigureAwait(false);

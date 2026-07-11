@@ -75,10 +75,10 @@
       <article class="panel span-2">
         <div class="panel-title">
           <div><p class="eyebrow">RENDERED VIEW</p><h2>Actual in-game viewport</h2></div>
-          <div class="capture-actions"><button id="captureScreen">Capture plugin window</button><button id="captureContext" class="secondary">Capture native viewport</button><button id="captureComposited" class="secondary">Capture composited game window</button><button id="clearCapture" class="secondary">Clear saved capture</button></div>
+          <div class="capture-actions"><button id="captureUnfocused">Capture unfocused review</button><button id="captureScreen" class="secondary">Capture plugin window</button><button id="captureContext" class="secondary">Capture native viewport</button><button id="captureComposited" class="secondary">Capture composited game window</button><button id="clearCapture" class="secondary">Clear saved capture</button></div>
         </div>
         <div id="captureMeta" class="capture-meta">No rendered frame captured yet.</div>
-        <p class="privacy-note">Captures are encrypted during local handoff and then retained as DPAPI-encrypted local review data for 30 minutes. The dashboard decrypts only in memory after its authenticated local session check. Composited capture reads only the foreground FFXIV client area and fails closed otherwise.</p>
+        <p class="privacy-note">Captures are retained as DPAPI-encrypted local review data for 30 minutes. The dashboard decrypts only in memory after its authenticated local session check. Unfocused review uses a short, frame-confirmed plugin presentation transaction and Windows Graphics Capture without activating FFXIV; all plaintext pixels remain in memory and are zeroed after vault storage.</p>
         <div class="capture-stage"><img id="captureImage" alt="Latest rendered plugin window capture"></div>
       </article>
 

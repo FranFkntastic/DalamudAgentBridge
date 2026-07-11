@@ -53,6 +53,13 @@ dotnet build .\src\DalamudAgentBridge.Plugin\DalamudAgentBridge.Plugin.csproj -p
 - Live verification toggled the standalone bridge's screenshot-handoff setting through this protocol and confirmed that replaying the same reviewed frame was rejected with HTTP 400.
 - This is intentionally not arbitrary coordinate clicking or keyboard injection.
 
+### Dalamud log observation
+
+- `GET /api/bridges/{id}/logs` reads the `dalamud.log` belonging to the selected bridge instance's XIVLauncher profile.
+- An omitted `cursor` returns a bounded recent tail. Supplying the returned `nextCursor` reads subsequent complete lines in order without one agent draining another agent's view.
+- `limit` is clamped to 1-1000 entries, each read is capped at 1 MiB, incomplete trailing lines are withheld until complete, and file truncation/rotation explicitly resets an invalid cursor.
+- The watcher is utility-owned, read-only, and does not require chat-window state or add filesystem access to an in-game plugin.
+
 ### Capture paths
 
 - Plugin viewport readback exists for focused, plugin-owned capture.
@@ -60,13 +67,15 @@ dotnet build .\src\DalamudAgentBridge.Plugin\DalamudAgentBridge.Plugin.csproj -p
 - `tools/WgcProbe` proved that Windows Graphics Capture can capture FFXIV's main window while it is unfocused and another application remains foreground.
 - Dalamud ImGui platform windows are separate native windows. Direct WGC capture of the bridge's secondary viewport handle failed with `E_INVALIDARG`.
 - Pinning the bridge window to `ImGui.GetMainViewport()` made the bridge panel part of the main FFXIV window. A subsequent unfocused WGC capture of the main FFXIV handle included the complete bridge ImGui panel. This is the decisive feasibility proof.
+- The utility now owns a production WGC service and authenticated review endpoint. It validates the advertised process and main-window ownership at request time, captures and encodes in memory with cancellation and a bounded timeout, feeds the buffer directly into `ReviewVault`, and zeroes it afterward.
+- Live production-endpoint proof captured the primary bridge process at 1920x1080 without changing the foreground window. Its isolated vault contained only DPAPI-protected image and metadata files and no plaintext PNG.
 - Probe plaintext images used during experimentation were deleted. The probe itself still accepts an output filename and therefore is not a production privacy-safe path.
 
-## Current experimental behavior
+## Current capture behavior
 
-`Plugin.DrawCore` currently forces the bridge window onto the main viewport and positions it at the main viewport work area's upper-left corner. This was added to prove background capture and is not yet a polished capture transaction. It may interfere with normal user positioning and should not silently become the permanent window policy.
+Ordinary plugin draws no longer force the bridge window onto the main viewport. The authenticated unfocused-review workflow starts a short-lived, frame-confirmed presentation transaction for the explicit bridge window, captures the main FFXIV window with WGC, stores it directly in the encrypted review vault, and completes or cancels the transaction to restore prior open/collapsed behavior.
 
-The utility's production capture endpoint still uses the foreground compositor path. WGC has not yet been integrated into the encrypted review vault.
+The dashboard reports each workflow stage and displays the authenticated no-store review. The reusable transaction state machine lives in Franthropy; WGC, DPAPI storage, HTTP endpoints, and browser UI remain utility-owned.
 
 ## Security invariants
 
@@ -120,9 +129,16 @@ For a runtime review, confirm all of the following rather than relying on a buil
 
 Process IDs and native window handles are runtime values. Discover them fresh; never record them as durable configuration.
 
-## Next work
+## Outcome achieved
 
-Follow [UNFOCUSED_CAPTURE_PLAN.md](UNFOCUSED_CAPTURE_PLAN.md). The immediate task is to turn the WGC proof into a production capture engine that sends pixels directly into `ReviewVault`, then replace the permanent viewport pin with a bounded capture transaction that restores the user's prior window behavior.
+All checkpoints in [UNFOCUSED_CAPTURE_PLAN.md](UNFOCUSED_CAPTURE_PLAN.md) are complete. Live proof on the primary standalone bridge captured a legible 1920x1080 plugin-inclusive review while the foreground application remained unchanged, restored the previously closed plugin window to closed, and left only DPAPI-protected vault files with no plaintext PNG.
+
+MarketMafioso `local-dev` now adopts the shared transaction and review registry. Live MMF
+proof captured its main window at 1920x1080 while another application remained foreground,
+restored the previously closed window to closed, exposed eight rendered tab controls,
+accepted one frame-valid invocation, rejected its replay with HTTP 400, and left no
+plaintext PNG. See MMF's `docs/agentic-ui-development.md` for the contributor workflow and
+intentional capability boundary.
 
 ## Suggested starting prompt for a new task
 

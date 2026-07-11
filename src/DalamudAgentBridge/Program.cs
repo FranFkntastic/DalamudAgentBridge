@@ -17,6 +17,9 @@ builder.Services.AddSingleton<ReviewVault>();
 builder.Services.AddSingleton<LocalDashboardSession>();
 builder.Services.AddSingleton<CompositedGameWindowCaptureService>();
 builder.Services.AddSingleton<CompositedCaptureQueue>();
+builder.Services.AddSingleton<WindowsGraphicsCaptureService>();
+builder.Services.AddSingleton<UnfocusedReviewCaptureQueue>();
+builder.Services.AddSingleton<DalamudLogWatcher>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -102,6 +105,27 @@ app.MapGet("/api/bridges/{id}/snapshot", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Bridge snapshot failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/logs", (
+    string id,
+    long? cursor,
+    int? limit,
+    BridgeRegistry registry,
+    DalamudLogWatcher watcher) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    try
+    {
+        return Results.Ok(new { success = true, message = "Dalamud log entries captured.", receipt = watcher.Read(instance, cursor, limit) });
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+    {
+        return Results.Problem($"Dalamud log read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 
@@ -311,6 +335,60 @@ app.MapPost("/api/bridges/{id}/composited-captures", (
     }
 });
 
+app.MapPost("/api/bridges/{id}/wgc-captures", async (
+    string id,
+    BridgeRegistry registry,
+    WindowsGraphicsCaptureService captureService,
+    ReviewVault reviewVault,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    byte[]? pngBytes = null;
+    try
+    {
+        var capture = await captureService.CaptureAsync(instance.ProcessId, cancellationToken);
+        pngBytes = capture.PngBytes;
+        var receipt = new BridgeCaptureReceipt
+        {
+            SchemaVersion = 1,
+            CaptureId = Guid.NewGuid().ToString("N"),
+            FileName = "windows-graphics-capture-memory",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            Width = capture.Width,
+            Height = capture.Height,
+            Sha256 = Convert.ToHexString(SHA256.HashData(pngBytes)),
+            ProcessId = instance.ProcessId,
+            Scope = "WindowsGraphicsCaptureMainWindow",
+        };
+        var review = reviewVault.Store(receipt, pngBytes);
+        return Results.Ok(new
+        {
+            success = true,
+            message = "FFXIV main window captured without changing the foreground application.",
+            receipt,
+            review,
+            imageUrl = $"/api/reviews/{review.Id}.png",
+        });
+    }
+    catch (WindowsGraphicsCaptureException ex)
+    {
+        return Results.BadRequest(new
+        {
+            success = false,
+            failure = ex.Failure.ToString(),
+            message = $"Windows Graphics Capture failed: {ex.Message}",
+        });
+    }
+    finally
+    {
+        if (pngBytes != null)
+            CryptographicOperations.ZeroMemory(pngBytes);
+    }
+});
+
 app.MapPost("/api/bridges/{id}/composited-capture-requests", (
     string id,
     BridgeRegistry registry,
@@ -328,6 +406,32 @@ app.MapGet("/api/composited-capture-requests/{requestId}", (string requestId, Co
     captureQueue.TryGet(requestId, out var request)
         ? Results.Ok(new { success = true, request })
         : Results.NotFound(new { success = false, message = "Composited capture request was not found or has expired." }));
+
+app.MapPost("/api/bridges/{id}/unfocused-review-capture-requests", (
+    string id,
+    BridgeRegistry registry,
+    UnfocusedReviewCaptureQueue captureQueue) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    var target = instance.PluginName switch
+    {
+        "DalamudAgentBridge" => "bridge.main-window",
+        "MarketMafioso" => "mmf.main-window",
+        _ => null,
+    };
+    if (target == null)
+        return Results.BadRequest(new { success = false, message = "This plugin has not adopted the capture-presentation transaction protocol." });
+
+    var request = captureQueue.Queue(instance, target);
+    return Results.Accepted($"/api/unfocused-review-capture-requests/{request.RequestId}", new { success = true, request });
+});
+
+app.MapGet("/api/unfocused-review-capture-requests/{requestId}", (string requestId, UnfocusedReviewCaptureQueue captureQueue) =>
+    captureQueue.TryGet(requestId, out var request)
+        ? Results.Ok(new { success = true, request })
+        : Results.NotFound(new { success = false, message = "Unfocused review capture request was not found or has expired." }));
 
 app.MapGet("/api/reviews", (ReviewVault reviewVault) =>
     Results.Ok(reviewVault.List()));
