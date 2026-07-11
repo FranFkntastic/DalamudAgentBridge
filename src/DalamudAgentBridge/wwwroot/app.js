@@ -1,20 +1,13 @@
 const elements = {
-  bridgeSelect: document.querySelector('#bridgeSelect'),
-  connectionState: document.querySelector('#connectionState'),
-  identity: document.querySelector('#identity'),
-  routeState: document.querySelector('#routeState'),
-  proofReceipt: document.querySelector('#proofReceipt'),
-  activityLog: document.querySelector('#activityLog'),
-  captureImage: document.querySelector('#captureImage'),
-  captureMeta: document.querySelector('#captureMeta'),
+  bridgeSelect: document.querySelector('#bridgeSelect'), connectionState: document.querySelector('#connectionState'),
+  identity: document.querySelector('#identity'), routeState: document.querySelector('#routeState'),
+  proofReceipt: document.querySelector('#proofReceipt'), activityLog: document.querySelector('#activityLog'),
+  captureImage: document.querySelector('#captureImage'), captureMeta: document.querySelector('#captureMeta'),
 };
 let bridges = [];
 let activeBridgeId = '';
 let captureObjectUrl = '';
-const escapeHtml = value => String(value ?? '')
-  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
-
+const escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const tabs = ['Overview', 'Inventory Reporter', 'Workshop Logistics', 'Restock', 'Market Acquisition', 'Diagnostics', 'Settings', 'Status'];
 document.querySelector('#tabButtons').innerHTML = tabs.map(tab => `<button data-tab="${escapeHtml(tab)}">${escapeHtml(tab)}</button>`).join('');
 
@@ -44,38 +37,36 @@ async function refreshSnapshot() {
 }
 
 function renderState(receipt) {
-  const truth = receipt.truth;
+  const truth = receipt.truth ?? receipt;
   const route = truth.route;
+  const isMmf = Boolean(route);
+  document.querySelectorAll('.mmf-only').forEach(element => { element.hidden = !isMmf; });
   elements.identity.innerHTML = [
-    ['Plugin', truth.pluginVersion],
-    ['Character', truth.characterName || 'Unavailable'],
-    ['World', truth.currentWorld || 'Unavailable'],
-    ['Process', truth.processId],
+    ['Plugin', truth.pluginVersion], ['Character', truth.characterName || 'Unavailable'],
+    ['World', truth.currentWorld || 'Unavailable'], ['Process', truth.processId],
   ].map(([label, value]) => `<div class="metric"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
+  if (!isMmf) {
+    const capabilities = Array.isArray(truth.capabilities) ? truth.capabilities.join(' · ') : 'snapshot only';
+    elements.routeState.innerHTML = `<strong>${escapeHtml(truth.hostKind ?? 'Bridge host')}</strong><br><span class="subtitle">Capabilities: ${escapeHtml(capabilities)} · Screenshots: ${truth.screenshotsEnabled ? 'enabled' : 'disabled'}</span>`;
+    document.querySelector('#captureScreen').textContent = 'Capture plugin window';
+    return;
+  }
   elements.routeState.innerHTML = `<strong>${escapeHtml(route.state)}</strong> · ${escapeHtml(route.statusMessage)}<br><span class="subtitle">Active stop: ${escapeHtml(route.activeWorld ?? 'None')} · Operation: ${escapeHtml(route.activeOperationKind ?? 'None')} / ${escapeHtml(route.activeOperationPhase ?? 'None')}</span>`;
+  document.querySelector('#captureScreen').textContent = 'Capture MMF window';
 }
 
 function renderProof(receipt) {
   elements.proofReceipt.innerHTML = [
-    ['Proof ID', receipt.proofId],
-    ['Revision', receipt.revision],
-    ['Challenge', receipt.challenge || '(none)'],
-    ['Presented', receipt.presentedInGame ? 'Yes' : 'No'],
-    ['Proof SHA-256', receipt.proofSha256],
-    ['Truth SHA-256', receipt.truthSha256],
+    ['Proof ID', receipt.proofId], ['Revision', receipt.revision], ['Challenge', receipt.challenge || '(none)'],
+    ['Presented', receipt.presentedInGame ? 'Yes' : 'No'], ['Proof SHA-256', receipt.proofSha256], ['Truth SHA-256', receipt.truthSha256],
   ].map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('');
 }
 
-function renderReceipt(receipt) {
-  renderState(receipt);
-  renderProof(receipt);
-}
+function renderReceipt(receipt) { renderState(receipt); if (receipt.truth) renderProof(receipt); }
 
 async function command(commandName, payload = {}) {
   if (!activeBridgeId) throw new Error('No active bridge instance');
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/commands/${commandName}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-  });
+  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/commands/${commandName}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const body = await response.json();
   log(`${commandName}: ${body.message ?? body.detail ?? response.status}`, body.receipt);
   if (!response.ok || !body.success) throw new Error(body.message ?? body.detail ?? `${commandName} failed`);
@@ -88,18 +79,13 @@ document.querySelector('#refreshSnapshot').addEventListener('click', () => refre
 elements.bridgeSelect.addEventListener('change', event => { activeBridgeId = event.target.value; refreshSnapshot().catch(error => log(error.message)); });
 document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => command(button.dataset.command).then(refreshSnapshot).catch(error => log(error.message))));
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => captureScreen(false, button.dataset.tab, button)));
-document.querySelector('#captureProof').addEventListener('click', async () => {
-  const challenge = `bridge-ui-${Date.now()}`;
-  try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); }
-});
+document.querySelector('#captureProof').addEventListener('click', async () => { const challenge = `bridge-ui-${Date.now()}`; try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); } });
 async function captureScreen(fullViewport, target = null, trigger = null) {
   if (!activeBridgeId) return;
   const button = trigger ?? (fullViewport ? document.querySelector('#captureContext') : document.querySelector('#captureScreen'));
   button.disabled = true;
   try {
-    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport, target }),
-    });
+    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport, target }) });
     const body = await response.json();
     if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Capture failed');
     const receipt = body.receipt;
@@ -113,16 +99,11 @@ async function captureScreen(fullViewport, target = null, trigger = null) {
     elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
     log(target ? `review-control ${target}: ${body.message}` : `capture-screen: ${body.message}`);
     await refreshSnapshot();
-  } catch (error) {
-    log(error.message);
-    elements.captureMeta.textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
+  } catch (error) { log(error.message); elements.captureMeta.textContent = error.message; }
+  finally { button.disabled = false; }
 }
 document.querySelector('#captureScreen').addEventListener('click', () => captureScreen(false));
 document.querySelector('#captureContext').addEventListener('click', () => captureScreen(true));
 window.addEventListener('beforeunload', () => { if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl); });
-
 discover().catch(error => log(error.message));
 setInterval(() => refreshSnapshot().catch(error => log(error.message)), 1500);

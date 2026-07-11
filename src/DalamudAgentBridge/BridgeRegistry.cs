@@ -1,7 +1,6 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using Franthropy.Dalamud.AgentBridge;
 
 namespace DalamudAgentBridge;
 
@@ -81,18 +80,7 @@ public sealed class BridgeRegistry
             if (document.RootElement.TryGetProperty("AgentBridgeProtectedAccessToken", out var protectedToken) &&
                 !string.IsNullOrWhiteSpace(protectedToken.GetString()))
             {
-                var protectedBytes = Convert.FromBase64String(protectedToken.GetString()!);
-                try
-                {
-                    return Encoding.UTF8.GetString(ProtectedData.Unprotect(
-                        protectedBytes,
-                        Encoding.UTF8.GetBytes(pluginInstanceId),
-                        DataProtectionScope.CurrentUser));
-                }
-                finally
-                {
-                    CryptographicOperations.ZeroMemory(protectedBytes);
-                }
+                return AgentBridgeDataProtection.UnprotectToken(protectedToken.GetString()!, pluginInstanceId);
             }
 
             return document.RootElement.TryGetProperty("AgentBridgeAccessToken", out var legacyToken)

@@ -13,16 +13,42 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IDalamudPluginInterface pluginInterface;
     private readonly ICommandManager commandManager;
     private readonly IPlayerState playerState;
+    private readonly IFramework framework;
+    private readonly Configuration configuration;
+    private readonly AgentBridgeViewportCaptureService viewportCapture;
+    private readonly AgentBridgeHost bridgeHost;
     private bool windowOpen;
+    private AgentBridgeCaptureRegion? captureRegion;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
         ICommandManager commandManager,
-        IPlayerState playerState)
+        IPlayerState playerState,
+        IFramework framework,
+        ITextureProvider textureProvider,
+        ITextureReadbackProvider textureReadbackProvider)
     {
         this.pluginInterface = pluginInterface;
         this.commandManager = commandManager;
         this.playerState = playerState;
+        this.framework = framework;
+        configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        configuration.Initialize(pluginInterface);
+        viewportCapture = new AgentBridgeViewportCaptureService(
+            pluginInterface.GetPluginConfigDirectory(),
+            configuration.PluginInstanceId,
+            () => captureRegion,
+            action => framework.RunOnTick(action),
+            textureProvider,
+            textureReadbackProvider);
+        bridgeHost = new AgentBridgeHost(
+            configuration,
+            pluginInterface.GetPluginConfigDirectory(),
+            action => framework.RunOnTick(action),
+            CreateSnapshot,
+            OpenWindow,
+            viewportCapture.CaptureAsync);
+        bridgeHost.Start();
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Open the Dalamud Agent Bridge connector status window.",
@@ -34,6 +60,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        bridgeHost.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
         pluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
@@ -63,10 +90,22 @@ public sealed class Plugin : IDalamudPlugin
         DrawRow("Process", Environment.ProcessId.ToString());
         DrawRow("Character", playerState.CharacterName ?? "Unavailable");
         DrawRow("World", playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable");
-        DrawRow("Local dashboard", "http://127.0.0.1:45831");
-        DrawRow("Repository", "http://127.0.0.1:45831/repository/repo.json");
+        DrawRow("Bridge", "Authenticated local named pipe (current user)");
+        DrawRow("Screenshots", configuration.EnableScreenshots ? "Enabled — encrypted one-time handoff" : "Disabled");
+        var screenshotsEnabled = configuration.EnableScreenshots;
+        if (ImGui.Checkbox("Allow screenshot handoff to the local bridge utility", ref screenshotsEnabled))
+        {
+            configuration.EnableScreenshots = screenshotsEnabled;
+            configuration.Save();
+        }
         ImGui.Spacing();
-        ImGui.TextDisabled("Current slice: install/distribution proof and connector identity. Bridge-enabled host plugins provide their own explicit screenshot capability.");
+        ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This plugin provides its own viewport capture; it does not require MarketMafioso.");
+        captureRegion = new AgentBridgeCaptureRegion(
+            ImGui.GetWindowPos(),
+            ImGui.GetWindowSize(),
+            ImGui.GetMainViewport().Pos,
+            ImGui.GetMainViewport().Size,
+            DateTimeOffset.UtcNow);
         ImGui.End();
     }
 
@@ -76,4 +115,15 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.SameLine(150f);
         ImGui.TextUnformatted(value);
     }
+
+    private object CreateSnapshot() => new
+    {
+        hostKind = "DalamudAgentBridge",
+        pluginVersion = pluginInterface.Manifest.AssemblyVersion,
+        processId = Environment.ProcessId,
+        characterName = playerState.CharacterName ?? "Unavailable",
+        currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
+        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture" },
+        screenshotsEnabled = configuration.EnableScreenshots,
+    };
 }

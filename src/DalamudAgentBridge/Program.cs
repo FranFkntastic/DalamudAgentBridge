@@ -2,6 +2,7 @@ using DalamudAgentBridge;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using Franthropy.Dalamud.AgentBridge;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -164,10 +165,7 @@ app.MapPost("/api/bridges/{id}/captures", async (
             var encryptedBytes = await File.ReadAllBytesAsync(capturePath, cancellationToken);
             try
             {
-                pngBytes = ProtectedData.Unprotect(
-                    encryptedBytes,
-                    Encoding.UTF8.GetBytes(instance.PluginInstanceId),
-                    DataProtectionScope.CurrentUser);
+                pngBytes = AgentBridgeDataProtection.UnprotectBytes(encryptedBytes, instance.PluginInstanceId);
             }
             finally
             {

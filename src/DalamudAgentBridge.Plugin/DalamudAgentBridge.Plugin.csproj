@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.0.0</Version>
+    <Version>0.2.0.0</Version>
     <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
@@ -15,9 +15,23 @@
     <Punchline>Local agent control and inspection connector.</Punchline>
     <RepoUrl>https://github.com/FranFkntastic/DalamudAgentBridge</RepoUrl>
   </PropertyGroup>
+  <PropertyGroup>
+    <FranthropyDalamudProject Condition="'$(FranthropyDalamudProject)' == ''">..\..\..\Franthropy\src\Franthropy.Dalamud\Franthropy.Dalamud.csproj</FranthropyDalamudProject>
+  </PropertyGroup>
+  <Target Name="RequireFranthropyDalamud" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(FranthropyDalamudProject)')"
+      Text="Franthropy.Dalamud project was not found at '$(FranthropyDalamudProject)'. Clone Franthropy beside DalamudAgentBridge or set -p:FranthropyDalamudProject=&quot;path\to\Franthropy.Dalamud.csproj&quot;." />
+  </Target>
   <ItemGroup>
+    <ProjectReference Include="$(FranthropyDalamudProject)" />
     <Content Include="DalamudAgentBridge.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DevPluginDeployDir Condition="'$(DevPluginDeployDir)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\_deployed\DalamudAgentBridge'))</DevPluginDeployDir>
+  </PropertyGroup>
+  <Target Name="SyncToDevPlugins" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\Sync-DevPlugin.ps1&quot; -SourceDir &quot;$(TargetDir).&quot; -DestDir &quot;$(DevPluginDeployDir)&quot; -PluginName &quot;$(AssemblyName)&quot;" />
+  </Target>
 </Project>

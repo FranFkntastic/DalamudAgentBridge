@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">LOCAL CONTROL SURFACE</p>
         <h1>Dalamud Agent Bridge</h1>
-        <p class="subtitle">Discover, inspect, and safely control bridge-enabled Dalamud plugins.</p>
+        <p class="subtitle">Discover, inspect, and safely control bridge-enabled Dalamud plugins. Plugin-specific controls appear only when that plugin advertises them.</p>
       </div>
       <button id="refreshBridges" class="secondary">Refresh instances</button>
     </header>
@@ -37,19 +37,19 @@
         <p class="eyebrow">WINDOW CONTROL</p>
         <h2>In-game surfaces</h2>
         <div class="button-stack">
-          <button data-command="open-main-window">Open MMF</button>
-          <button data-command="open-acquisition-diagnostics">Open acquisition diagnostics</button>
-          <button id="captureProof">Capture proof window</button>
+          <button data-command="open-main-window">Open plugin window</button>
+          <button class="mmf-only" data-command="open-acquisition-diagnostics">Open acquisition diagnostics</button>
+          <button class="mmf-only" id="captureProof">Capture proof window</button>
         </div>
       </article>
 
-      <article class="panel">
+      <article class="panel mmf-only">
         <p class="eyebrow">REVIEW CONTROL</p>
         <h2>Main-window tabs</h2>
         <div id="tabButtons" class="button-grid"></div>
       </article>
 
-      <article class="panel">
+      <article class="panel mmf-only">
         <p class="eyebrow">SAFE ACTIONS</p>
         <h2>Diagnostics and cleanup</h2>
         <div class="button-stack">
@@ -58,7 +58,7 @@
         </div>
       </article>
 
-      <article class="panel">
+      <article class="panel mmf-only">
         <p class="eyebrow">PROOF RECEIPT</p>
         <h2>Rendered acknowledgement</h2>
         <dl id="proofReceipt" class="facts"><div><dt>Status</dt><dd>No proof loaded</dd></div></dl>
@@ -67,11 +67,11 @@
       <article class="panel span-2">
         <div class="panel-title">
           <div><p class="eyebrow">RENDERED VIEW</p><h2>Actual in-game viewport</h2></div>
-          <div class="capture-actions"><button id="captureScreen">Capture MMF window</button><button id="captureContext" class="secondary">Capture full context</button></div>
+          <div class="capture-actions"><button id="captureScreen">Capture plugin window</button><button id="captureContext" class="secondary">Capture full context</button></div>
         </div>
         <div id="captureMeta" class="capture-meta">No rendered frame captured yet.</div>
         <p class="privacy-note">Captures are encrypted during local handoff, then held in memory for one view or 45 seconds. “Full context” deliberately includes the complete FFXIV viewport; neither mode is linked, cached, or retained by the bridge.</p>
-        <div class="capture-stage"><img id="captureImage" alt="Latest rendered MMF window capture"></div>
+        <div class="capture-stage"><img id="captureImage" alt="Latest rendered plugin window capture"></div>
       </article>
 
       <article class="panel span-2">

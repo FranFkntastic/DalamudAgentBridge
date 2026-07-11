@@ -6,6 +6,7 @@
     <RootNamespace>DalamudAgentBridge</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Franthropy\src\Franthropy.Dalamud\Franthropy.Dalamud.csproj" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
     <Content Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
