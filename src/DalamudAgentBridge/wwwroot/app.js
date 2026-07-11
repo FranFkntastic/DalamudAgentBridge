@@ -87,18 +87,18 @@ document.querySelector('#refreshBridges').addEventListener('click', () => discov
 document.querySelector('#refreshSnapshot').addEventListener('click', () => refreshSnapshot().catch(error => log(error.message)));
 elements.bridgeSelect.addEventListener('change', event => { activeBridgeId = event.target.value; refreshSnapshot().catch(error => log(error.message)); });
 document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => command(button.dataset.command).then(refreshSnapshot).catch(error => log(error.message))));
-document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => command('select-main-tab', { target: button.dataset.tab }).then(refreshSnapshot).catch(error => log(error.message))));
+document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => captureScreen(false, button.dataset.tab, button)));
 document.querySelector('#captureProof').addEventListener('click', async () => {
   const challenge = `bridge-ui-${Date.now()}`;
   try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); }
 });
-async function captureScreen(fullViewport) {
+async function captureScreen(fullViewport, target = null, trigger = null) {
   if (!activeBridgeId) return;
-  const button = fullViewport ? document.querySelector('#captureContext') : document.querySelector('#captureScreen');
+  const button = trigger ?? (fullViewport ? document.querySelector('#captureContext') : document.querySelector('#captureScreen'));
   button.disabled = true;
   try {
     const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport, target }),
     });
     const body = await response.json();
     if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Capture failed');
@@ -111,7 +111,8 @@ async function captureScreen(fullViewport) {
     elements.captureImage.src = captureObjectUrl;
     elements.captureImage.classList.add('ready');
     elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
-    log(`capture-screen: ${body.message}`);
+    log(target ? `review-control ${target}: ${body.message}` : `capture-screen: ${body.message}`);
+    await refreshSnapshot();
   } catch (error) {
     log(error.message);
     elements.captureMeta.textContent = error.message;
