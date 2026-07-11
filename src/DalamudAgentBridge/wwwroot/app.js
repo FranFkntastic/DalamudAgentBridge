@@ -7,10 +7,10 @@ const elements = {
   activityLog: document.querySelector('#activityLog'),
   captureImage: document.querySelector('#captureImage'),
   captureMeta: document.querySelector('#captureMeta'),
-  captureLink: document.querySelector('#captureLink'),
 };
 let bridges = [];
 let activeBridgeId = '';
+let captureObjectUrl = '';
 const escapeHtml = value => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
@@ -101,12 +101,15 @@ document.querySelector('#captureScreen').addEventListener('click', async () => {
     const body = await response.json();
     if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Capture failed');
     const receipt = body.receipt;
-    const captureUrl = `${body.imageUrl}?v=${encodeURIComponent(receipt.sha256)}`;
-    elements.captureImage.src = captureUrl;
-    elements.captureLink.href = captureUrl;
+    const imageResponse = await fetch(body.imageUrl, { cache: 'no-store' });
+    if (!imageResponse.ok) throw new Error('Capture image delivery expired before it could be displayed');
+    const imageBlob = await imageResponse.blob();
+    if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl);
+    captureObjectUrl = URL.createObjectURL(imageBlob);
+    elements.captureImage.src = captureObjectUrl;
     elements.captureImage.classList.add('ready');
     elements.captureMeta.textContent = `${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
-    log(`capture-screen: ${body.message}`, receipt);
+    log(`capture-screen: ${body.message}`);
   } catch (error) {
     log(error.message);
     elements.captureMeta.textContent = error.message;
@@ -114,6 +117,7 @@ document.querySelector('#captureScreen').addEventListener('click', async () => {
     button.disabled = false;
   }
 });
+window.addEventListener('beforeunload', () => { if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl); });
 
 discover().catch(error => log(error.message));
 setInterval(() => refreshSnapshot().catch(error => log(error.message)), 1500);

@@ -20,9 +20,18 @@ The normal build also creates a private, loopback-only Dalamud repository at
 ## Safety boundary
 
 - Binds to `127.0.0.1` only.
-- Reads bridge access tokens locally; never returns them to clients.
+- Requires a per-run, HTTP-only local dashboard session for every bridge API and image request.
+- Reads DPAPI-protected bridge access tokens locally; never returns them to clients.
 - Enforces its own command allowlist in addition to each plugin's allowlist.
 - MMF currently exposes state/window/tab control, proof capture, input diagnostics, and route stop. It does not expose route start or purchase commands.
+
+## Screenshot privacy
+
+Screenshot capture is disabled by default in MMF and must be explicitly enabled in that plugin's local configuration. A capture fails closed unless MMF itself is currently rendered, and only its current window rectangle is captured—not the full game viewport.
+
+The plugin encodes the crop in memory, protects the short handoff with Windows DPAPI for the current user, and never writes plaintext PNGs or sidecar metadata. The utility verifies and imports the image, immediately deletes the protected handoff file, and keeps the raw PNG only in memory for one single-use delivery or 45 seconds. Browser delivery uses no-store headers and a Blob URL that is revoked when replaced or closed.
+
+This reduces accidental persistence and unauthorised local web access; it does not protect against a compromised Windows user account, a malicious local process, browser extensions with local access, or downstream systems that may retain pixels after display.
 
 ## Protocol convention
 

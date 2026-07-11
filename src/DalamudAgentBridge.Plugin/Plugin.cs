@@ -66,7 +66,7 @@ public sealed class Plugin : IDalamudPlugin
         DrawRow("Local dashboard", "http://127.0.0.1:45831");
         DrawRow("Repository", "http://127.0.0.1:45831/repository/repo.json");
         ImGui.Spacing();
-        ImGui.TextDisabled("Current slice: install/distribution proof and connector identity. Visual capture remains a future bridge capability.");
+        ImGui.TextDisabled("Current slice: install/distribution proof and connector identity. Bridge-enabled host plugins provide their own explicit screenshot capability.");
         ImGui.End();
     }
 

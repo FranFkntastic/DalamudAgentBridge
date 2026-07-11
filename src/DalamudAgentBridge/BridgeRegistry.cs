@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace DalamudAgentBridge;
@@ -27,14 +29,15 @@ public sealed class BridgeRegistry
             if (!Directory.Exists(bridgeDirectory))
                 continue;
 
-            var token = ReadAccessToken(Path.Combine(pluginConfigRoot, $"{pluginName}.json"));
-            if (string.IsNullOrWhiteSpace(token))
-                continue;
+            var accessTokenPath = Path.Combine(pluginConfigRoot, $"{pluginName}.json");
 
             foreach (var discoveryPath in Directory.EnumerateFiles(bridgeDirectory, "discovery*.json"))
             {
                 var discovery = ReadDiscovery(discoveryPath);
                 if (discovery == null || !IsProcessAlive(discovery.ProcessId))
+                    continue;
+                var token = ReadAccessToken(accessTokenPath, discovery.PluginInstanceId);
+                if (string.IsNullOrWhiteSpace(token))
                     continue;
 
                 var id = $"{pluginName}-{discovery.ProcessId}";
@@ -70,13 +73,30 @@ public sealed class BridgeRegistry
         }
     }
 
-    private string? ReadAccessToken(string path)
+    private string? ReadAccessToken(string path, string pluginInstanceId)
     {
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
-            return document.RootElement.TryGetProperty("AgentBridgeAccessToken", out var token)
-                ? token.GetString()
+            if (document.RootElement.TryGetProperty("AgentBridgeProtectedAccessToken", out var protectedToken) &&
+                !string.IsNullOrWhiteSpace(protectedToken.GetString()))
+            {
+                var protectedBytes = Convert.FromBase64String(protectedToken.GetString()!);
+                try
+                {
+                    return Encoding.UTF8.GetString(ProtectedData.Unprotect(
+                        protectedBytes,
+                        Encoding.UTF8.GetBytes(pluginInstanceId),
+                        DataProtectionScope.CurrentUser));
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(protectedBytes);
+                }
+            }
+
+            return document.RootElement.TryGetProperty("AgentBridgeAccessToken", out var legacyToken)
+                ? legacyToken.GetString()
                 : null;
         }
         catch (Exception) when (File.Exists(path))

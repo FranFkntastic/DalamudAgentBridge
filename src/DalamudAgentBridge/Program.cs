@@ -1,6 +1,7 @@
 using DalamudAgentBridge;
 using System.Text.Json;
 using System.Security.Cryptography;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -11,8 +12,48 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 builder.WebHost.UseUrls(builder.Configuration["Bridge:Url"] ?? "http://127.0.0.1:45831");
 builder.Services.AddSingleton<BridgeRegistry>();
 builder.Services.AddSingleton<NamedPipeBridgeClient>();
+builder.Services.AddSingleton<CaptureVault>();
+builder.Services.AddSingleton<LocalDashboardSession>();
 
 var app = builder.Build();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.CacheControl = "no-store, no-cache, private";
+    context.Response.Headers.Pragma = "no-cache";
+    context.Response.Headers.Expires = "0";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+
+    if (context.Request.Path.StartsWithSegments("/repository"))
+    {
+        await next();
+        return;
+    }
+
+    var session = context.RequestServices.GetRequiredService<LocalDashboardSession>();
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        var origin = context.Request.Headers.Origin.ToString();
+        if (!string.IsNullOrEmpty(origin) && !string.Equals(origin, "http://127.0.0.1:45831", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        if (!session.IsAuthenticated(context))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+    else if (HttpMethods.IsGet(context.Request.Method))
+    {
+        session.Establish(context);
+    }
+
+    await next();
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -91,6 +132,7 @@ app.MapPost("/api/bridges/{id}/captures", async (
     BridgeCommandRequest? request,
     BridgeRegistry registry,
     NamedPipeBridgeClient client,
+    CaptureVault captureVault,
     CancellationToken cancellationToken) =>
 {
     var instance = registry.Find(id);
@@ -111,23 +153,50 @@ app.MapPost("/api/bridges/{id}/captures", async (
             receipt.ProcessId != instance.ProcessId ||
             receipt.Width is < 1 or > 16384 ||
             receipt.Height is < 1 or > 16384 ||
-            !string.Equals(receipt.FileName, $"{receipt.CaptureId}.png", StringComparison.Ordinal) ||
+            !string.Equals(receipt.FileName, $"{receipt.CaptureId}.bin", StringComparison.Ordinal) ||
             !TryResolveCapturePath(instance, receipt.CaptureId, out var capturePath) ||
             !File.Exists(capturePath))
             return Results.Problem("Bridge returned an invalid capture receipt.", statusCode: StatusCodes.Status502BadGateway);
 
-        await using var captureStream = File.OpenRead(capturePath);
-        var actualSha256 = Convert.ToHexString(await SHA256.HashDataAsync(captureStream, cancellationToken));
-        if (!string.Equals(actualSha256, receipt.Sha256, StringComparison.OrdinalIgnoreCase))
-            return Results.Problem("Bridge capture hash verification failed.", statusCode: StatusCodes.Status502BadGateway);
+        byte[] pngBytes;
+        try
+        {
+            var encryptedBytes = await File.ReadAllBytesAsync(capturePath, cancellationToken);
+            try
+            {
+                pngBytes = ProtectedData.Unprotect(
+                    encryptedBytes,
+                    Encoding.UTF8.GetBytes(instance.PluginInstanceId),
+                    DataProtectionScope.CurrentUser);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(encryptedBytes);
+            }
+        }
+        catch (CryptographicException)
+        {
+            return Results.Problem("Bridge capture decryption failed.", statusCode: StatusCodes.Status502BadGateway);
+        }
+        finally
+        {
+            File.Delete(capturePath);
+        }
 
-        httpContext.Response.Headers.CacheControl = "no-store";
+        var actualSha256 = Convert.ToHexString(SHA256.HashData(pngBytes));
+        if (!string.Equals(actualSha256, receipt.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            CryptographicOperations.ZeroMemory(pngBytes);
+            return Results.Problem("Bridge capture hash verification failed.", statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        var captureHandle = captureVault.Store(pngBytes);
         return Results.Ok(new
         {
             success = true,
             message = response.Message,
             receipt,
-            imageUrl = $"/api/bridges/{Uri.EscapeDataString(id)}/captures/{receipt.CaptureId}.png",
+            imageUrl = $"/api/captures/{captureHandle}.png",
         });
     }
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
@@ -136,17 +205,26 @@ app.MapPost("/api/bridges/{id}/captures", async (
     }
 });
 
-app.MapGet("/api/bridges/{id}/captures/{captureId}.png", (
-    string id,
-    string captureId,
+app.MapGet("/api/captures/{captureHandle}.png", async (
+    string captureHandle,
     HttpContext httpContext,
-    BridgeRegistry registry) =>
+    CaptureVault captureVault) =>
 {
-    var instance = registry.Find(id);
-    httpContext.Response.Headers.CacheControl = "no-store";
-    return instance != null && TryResolveCapturePath(instance, captureId, out var path) && File.Exists(path)
-        ? Results.File(path, "image/png", enableRangeProcessing: false)
-        : Results.NotFound();
+    if (!captureVault.TryTake(captureHandle, out var pngBytes))
+    {
+        httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    try
+    {
+        httpContext.Response.ContentType = "image/png";
+        httpContext.Response.ContentLength = pngBytes.Length;
+        await httpContext.Response.Body.WriteAsync(pngBytes);
+    }
+    finally
+    {
+        CryptographicOperations.ZeroMemory(pngBytes);
+    }
 });
 
 app.MapFallbackToFile("index.html");
@@ -163,7 +241,7 @@ static bool TryResolveCapturePath(BridgeInstance instance, string captureId, out
         return false;
 
     var captureDirectory = Path.GetFullPath(Path.Combine(bridgeDirectory, "captures"));
-    var candidate = Path.GetFullPath(Path.Combine(captureDirectory, $"{captureId}.png"));
+    var candidate = Path.GetFullPath(Path.Combine(captureDirectory, $"{captureId}.bin"));
     if (!candidate.StartsWith(captureDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         return false;
 
