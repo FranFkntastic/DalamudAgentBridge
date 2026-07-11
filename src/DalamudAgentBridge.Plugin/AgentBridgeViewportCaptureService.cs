@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Numerics;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +17,7 @@ public sealed class AgentBridgeViewportCaptureService
 {
     private readonly string captureDirectory;
     private readonly string pluginInstanceId;
-    private readonly Func<AgentBridgeCaptureRegion?> captureRegion;
+    private readonly Func<AgentBridgeViewportRegion?> captureRegion;
     private readonly Func<Action, Task> dispatchOnFramework;
     private readonly ITextureProvider textureProvider;
     private readonly ITextureReadbackProvider readbackProvider;
@@ -27,7 +26,7 @@ public sealed class AgentBridgeViewportCaptureService
     public AgentBridgeViewportCaptureService(
         string configDirectory,
         string pluginInstanceId,
-        Func<AgentBridgeCaptureRegion?> captureRegion,
+        Func<AgentBridgeViewportRegion?> captureRegion,
         Func<Action, Task> dispatchOnFramework,
         ITextureProvider textureProvider,
         ITextureReadbackProvider readbackProvider)
@@ -46,14 +45,14 @@ public sealed class AgentBridgeViewportCaptureService
         try
         {
             var region = captureRegion();
-            if (!fullViewport && (region == null || DateTimeOffset.UtcNow - region.RenderedAtUtc > TimeSpan.FromSeconds(5)))
+            if (!fullViewport && (region == null || !region.IsFresh(TimeSpan.FromSeconds(5), DateTimeOffset.UtcNow)))
                 throw new InvalidOperationException("The Agent Bridge window is not currently rendered; no screenshot was captured.");
 
             Task<IDalamudTextureWrap>? textureTask = null;
             await dispatchOnFramework(() =>
             {
                 var currentRegion = captureRegion();
-                if (!fullViewport && (currentRegion == null || DateTimeOffset.UtcNow - currentRegion.RenderedAtUtc > TimeSpan.FromSeconds(5)))
+                if (!fullViewport && (currentRegion == null || !currentRegion.IsFresh(TimeSpan.FromSeconds(5), DateTimeOffset.UtcNow)))
                     throw new InvalidOperationException("The Agent Bridge window is not currently rendered; no screenshot was captured.");
                 textureTask = textureProvider.CreateFromImGuiViewportAsync(new ImGuiViewportTextureArgs
                 {
@@ -61,8 +60,8 @@ public sealed class AgentBridgeViewportCaptureService
                     AutoUpdate = false,
                     TakeBeforeImGuiRender = false,
                     KeepTransparency = false,
-                    Uv0 = fullViewport ? default : currentRegion!.GetUv0(),
-                    Uv1 = fullViewport ? default : currentRegion!.GetUv1(),
+                    Uv0 = fullViewport ? default : currentRegion!.GetUvBounds().Uv0,
+                    Uv1 = fullViewport ? default : currentRegion!.GetUvBounds().Uv1,
                 }, "Dalamud Agent Bridge viewport capture", cancellationToken);
             }).ConfigureAwait(false);
 
@@ -95,11 +94,4 @@ public sealed class AgentBridgeViewportCaptureService
         }
         finally { captureLock.Release(); }
     }
-}
-
-public sealed record AgentBridgeCaptureRegion(Vector2 WindowPosition, Vector2 WindowSize, Vector2 ViewportPosition, Vector2 ViewportSize, DateTimeOffset RenderedAtUtc)
-{
-    private const float PaddingPixels = 8f;
-    public Vector2 GetUv0() => new(Math.Clamp((WindowPosition.X - PaddingPixels - ViewportPosition.X) / ViewportSize.X, 0f, 1f), Math.Clamp((WindowPosition.Y - PaddingPixels - ViewportPosition.Y) / ViewportSize.Y, 0f, 1f));
-    public Vector2 GetUv1() => new(Math.Clamp((WindowPosition.X + WindowSize.X + PaddingPixels - ViewportPosition.X) / ViewportSize.X, 0f, 1f), Math.Clamp((WindowPosition.Y + WindowSize.Y + PaddingPixels - ViewportPosition.Y) / ViewportSize.Y, 0f, 1f));
 }

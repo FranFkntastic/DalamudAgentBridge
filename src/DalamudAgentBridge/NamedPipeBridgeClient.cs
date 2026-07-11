@@ -39,6 +39,7 @@ public sealed class NamedPipeBridgeClient
             Token = instance.AccessToken,
             Command = command,
             Target = request?.Target,
+            FrameId = request?.FrameId,
             Challenge = request?.Challenge,
             ProofId = request?.ProofId,
             FullViewport = request?.FullViewport ?? false,

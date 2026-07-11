@@ -33,6 +33,7 @@ public sealed record BridgeInstanceView(
 public sealed record BridgeCommandRequest
 {
     public string? Target { get; init; }
+    public long? FrameId { get; init; }
     public string? Challenge { get; init; }
     public string? ProofId { get; init; }
     public bool FullViewport { get; init; }
@@ -56,6 +57,7 @@ public sealed record PluginBridgeRequest
     public required string Token { get; init; }
     public required string Command { get; init; }
     public string? Target { get; init; }
+    public long? FrameId { get; init; }
     public string? Challenge { get; init; }
     public string? ProofId { get; init; }
     public bool FullViewport { get; init; }

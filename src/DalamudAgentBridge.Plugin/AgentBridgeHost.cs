@@ -16,6 +16,8 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly string configDirectory;
     private readonly Func<Action, Task> dispatchOnFramework;
     private readonly Func<object> createSnapshot;
+    private readonly Func<object> createControlSurface;
+    private readonly Func<string, long, AgentBridgeUiControlInvocation> invokeControl;
     private readonly Action openWindow;
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly JsonSerializerOptions jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -23,12 +25,14 @@ public sealed class AgentBridgeHost : IDisposable
     private Task? listenTask;
     private string? accessToken;
 
-    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Action openWindow, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
+    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
     {
         this.configuration = configuration;
         this.configDirectory = configDirectory;
         this.dispatchOnFramework = dispatchOnFramework;
         this.createSnapshot = createSnapshot;
+        this.createControlSurface = createControlSurface;
+        this.invokeControl = invokeControl;
         this.openWindow = openWindow;
         this.captureViewport = captureViewport;
     }
@@ -77,6 +81,18 @@ public sealed class AgentBridgeHost : IDisposable
                 object? snapshot = null;
                 await dispatchOnFramework(() => snapshot = createSnapshot()).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Snapshot captured.", snapshot);
+            case "get-control-surface":
+                object? controlSurface = null;
+                await dispatchOnFramework(() => controlSurface = createControlSurface()).ConfigureAwait(false);
+                return AgentBridgeResponse.Ok("Control surface captured.", controlSurface);
+            case "invoke-control":
+                if (string.IsNullOrWhiteSpace(request.Target) || request.FrameId is not { } frameId)
+                    return AgentBridgeResponse.Fail("A control ID and rendered frame ID are required.");
+                AgentBridgeUiControlInvocation? invocation = null;
+                await dispatchOnFramework(() => invocation = invokeControl(request.Target, frameId)).ConfigureAwait(false);
+                return invocation!.Success
+                    ? AgentBridgeResponse.Ok(invocation.Message, invocation.Frame)
+                    : new AgentBridgeResponse { Success = false, Message = invocation.Message, Receipt = invocation.Frame };
             case "open-main-window":
                 await dispatchOnFramework(openWindow).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Agent Bridge window opened.");

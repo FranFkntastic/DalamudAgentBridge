@@ -13,8 +13,10 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 builder.WebHost.UseUrls(builder.Configuration["Bridge:Url"] ?? "http://127.0.0.1:45831");
 builder.Services.AddSingleton<BridgeRegistry>();
 builder.Services.AddSingleton<NamedPipeBridgeClient>();
-builder.Services.AddSingleton<CaptureVault>();
+builder.Services.AddSingleton<ReviewVault>();
 builder.Services.AddSingleton<LocalDashboardSession>();
+builder.Services.AddSingleton<CompositedGameWindowCaptureService>();
+builder.Services.AddSingleton<CompositedCaptureQueue>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -70,6 +72,8 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "capture-input-state",
     "stop-route",
     "capture-screen",
+    "get-control-surface",
+    "invoke-control",
 };
 
 app.MapGet("/api/bridges", (BridgeRegistry registry) =>
@@ -98,6 +102,54 @@ app.MapGet("/api/bridges/{id}/snapshot", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Bridge snapshot failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/controls", async (
+    string id,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    try
+    {
+        var response = await client.SendAsync(instance, "get-control-surface", null, cancellationToken);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Bridge control-surface read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/controls/{controlId}/invoke", async (
+    string id,
+    string controlId,
+    BridgeCommandRequest? request,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    try
+    {
+        var response = await client.SendAsync(instance, "invoke-control", new BridgeCommandRequest
+        {
+            Target = controlId,
+            FrameId = request?.FrameId,
+        }, cancellationToken);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Bridge control action failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 
@@ -133,7 +185,7 @@ app.MapPost("/api/bridges/{id}/captures", async (
     BridgeCommandRequest? request,
     BridgeRegistry registry,
     NamedPipeBridgeClient client,
-    CaptureVault captureVault,
+    ReviewVault reviewVault,
     CancellationToken cancellationToken) =>
 {
     var instance = registry.Find(id);
@@ -188,14 +240,22 @@ app.MapPost("/api/bridges/{id}/captures", async (
             return Results.Problem("Bridge capture hash verification failed.", statusCode: StatusCodes.Status502BadGateway);
         }
 
-        var captureHandle = captureVault.Store(pngBytes);
-        return Results.Ok(new
+        try
         {
-            success = true,
-            message = response.Message,
-            receipt,
-            imageUrl = $"/api/captures/{captureHandle}.png",
-        });
+            var review = reviewVault.Store(receipt, pngBytes);
+            return Results.Ok(new
+            {
+                success = true,
+                message = response.Message,
+                receipt,
+                review,
+                imageUrl = $"/api/reviews/{review.Id}.png",
+            });
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(pngBytes);
+        }
     }
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
@@ -203,12 +263,81 @@ app.MapPost("/api/bridges/{id}/captures", async (
     }
 });
 
-app.MapGet("/api/captures/{captureHandle}.png", async (
-    string captureHandle,
-    HttpContext httpContext,
-    CaptureVault captureVault) =>
+app.MapPost("/api/bridges/{id}/composited-captures", (
+    string id,
+    BridgeRegistry registry,
+    CompositedGameWindowCaptureService captureService,
+    ReviewVault reviewVault) =>
 {
-    if (!captureVault.TryTake(captureHandle, out var pngBytes))
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    byte[]? pngBytes = null;
+    try
+    {
+        var capture = captureService.Capture(instance.ProcessId);
+        pngBytes = capture.PngBytes;
+        var receipt = new BridgeCaptureReceipt
+        {
+            SchemaVersion = 1,
+            CaptureId = Guid.NewGuid().ToString("N"),
+            FileName = "composited-window-memory",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            Width = capture.Width,
+            Height = capture.Height,
+            Sha256 = Convert.ToHexString(SHA256.HashData(pngBytes)),
+            ProcessId = instance.ProcessId,
+            Scope = "CompositedGameWindow",
+        };
+        var review = reviewVault.Store(receipt, pngBytes);
+        return Results.Ok(new
+        {
+            success = true,
+            message = "Foreground FFXIV client area captured from the final compositor output.",
+            receipt,
+            review,
+            imageUrl = $"/api/reviews/{review.Id}.png",
+        });
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+    {
+        return Results.BadRequest(new { success = false, message = $"Composited capture failed: {ex.Message}" });
+    }
+    finally
+    {
+        if (pngBytes != null)
+            CryptographicOperations.ZeroMemory(pngBytes);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/composited-capture-requests", (
+    string id,
+    BridgeRegistry registry,
+    CompositedCaptureQueue captureQueue) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    var request = captureQueue.Queue(instance.ProcessId);
+    return Results.Accepted($"/api/composited-capture-requests/{request.RequestId}", new { success = true, request });
+});
+
+app.MapGet("/api/composited-capture-requests/{requestId}", (string requestId, CompositedCaptureQueue captureQueue) =>
+    captureQueue.TryGet(requestId, out var request)
+        ? Results.Ok(new { success = true, request })
+        : Results.NotFound(new { success = false, message = "Composited capture request was not found or has expired." }));
+
+app.MapGet("/api/reviews", (ReviewVault reviewVault) =>
+    Results.Ok(reviewVault.List()));
+
+app.MapGet("/api/reviews/{reviewId}.png", async (
+    string reviewId,
+    HttpContext httpContext,
+    ReviewVault reviewVault) =>
+{
+    if (!reviewVault.TryRead(reviewId, out var pngBytes))
     {
         httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
         return;
@@ -224,6 +353,9 @@ app.MapGet("/api/captures/{captureHandle}.png", async (
         CryptographicOperations.ZeroMemory(pngBytes);
     }
 });
+
+app.MapDelete("/api/reviews/{reviewId}", (string reviewId, ReviewVault reviewVault) =>
+    reviewVault.Delete(reviewId) ? Results.NoContent() : Results.NotFound());
 
 app.MapFallbackToFile("index.html");
 app.Run();
