@@ -6,21 +6,39 @@ namespace DalamudAgentBridge;
 
 public sealed class BridgeRegistry
 {
-    private readonly string pluginConfigRoot;
+    private readonly IReadOnlyList<string> pluginConfigRoots;
     private readonly JsonSerializerOptions jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public BridgeRegistry(IConfiguration configuration)
     {
-        pluginConfigRoot = configuration["Bridge:PluginConfigRoot"] ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XIVLauncher", "pluginConfigs");
+        pluginConfigRoots = ResolvePluginConfigRoots(
+            configuration,
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+    }
+
+    public static IReadOnlyList<string> ResolvePluginConfigRoots(IConfiguration configuration, string applicationDataRoot)
+    {
+        var configuredRoots = configuration["Bridge:PluginConfigRoots"];
+        if (!string.IsNullOrWhiteSpace(configuredRoots))
+            return configuredRoots.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var configuredRoot = configuration["Bridge:PluginConfigRoot"];
+        if (!string.IsNullOrWhiteSpace(configuredRoot))
+            return [Path.GetFullPath(configuredRoot)];
+        if (!Directory.Exists(applicationDataRoot))
+            return [];
+        return Directory.EnumerateDirectories(applicationDataRoot, "XIVLauncher*")
+            .Select(path => Path.Combine(path, "pluginConfigs"))
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public IReadOnlyList<BridgeInstance> Discover()
     {
-        if (!Directory.Exists(pluginConfigRoot))
-            return [];
-
         var instances = new Dictionary<string, BridgeInstance>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pluginConfigRoot in pluginConfigRoots.Where(Directory.Exists))
         foreach (var pluginDirectory in Directory.EnumerateDirectories(pluginConfigRoot))
         {
             var pluginName = Path.GetFileName(pluginDirectory);
