@@ -10,8 +10,6 @@ let activeBridgeId = '';
 let captureObjectUrl = '';
 let activeReviewId = '';
 const escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
-const tabs = ['Overview', 'Inventory Reporter', 'Workshop Logistics', 'Restock', 'Market Acquisition', 'Diagnostics', 'Settings', 'Status'];
-document.querySelector('#tabButtons').innerHTML = tabs.map(tab => `<button data-tab="${escapeHtml(tab)}">${escapeHtml(tab)}</button>`).join('');
 
 function log(message, value) {
   const stamp = new Date().toLocaleTimeString();
@@ -28,7 +26,23 @@ async function discover() {
   elements.connectionState.textContent = activeBridgeId ? 'Connected' : 'No bridge found';
   elements.connectionState.classList.toggle('online', Boolean(activeBridgeId));
   if (activeBridgeId) await refreshSnapshot();
+  if (activeBridgeId) await refreshReviewSurfaces();
   if (activeBridgeId) await refreshControls();
+}
+
+async function refreshReviewSurfaces() {
+  const container = document.querySelector('#tabButtons');
+  if (!activeBridgeId) { container.innerHTML = ''; return; }
+  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/review-surfaces`, { cache: 'no-store' });
+  const body = await response.json();
+  if (!response.ok || !body.success) {
+    container.innerHTML = `<span class="subtitle">${escapeHtml(body.message ?? body.detail ?? 'This plugin does not advertise review surfaces.')}</span>`;
+    return;
+  }
+  const surfaces = Array.isArray(body.receipt) ? [...body.receipt].sort((left, right) => Number(left.order) - Number(right.order)) : [];
+  container.innerHTML = surfaces.map(surface => `<button data-review-surface="${escapeHtml(surface.target)}">${escapeHtml(surface.label)}</button>`).join('');
+  container.querySelectorAll('[data-review-surface]').forEach(button =>
+    button.addEventListener('click', () => captureScreen(false, button.dataset.reviewSurface, button)));
 }
 
 async function refreshSnapshot() {
@@ -115,9 +129,12 @@ async function command(commandName, payload = {}) {
 document.querySelector('#refreshBridges').addEventListener('click', () => discover().catch(error => log(error.message)));
 document.querySelector('#refreshSnapshot').addEventListener('click', () => refreshSnapshot().catch(error => log(error.message)));
 document.querySelector('#refreshControls').addEventListener('click', () => refreshControls().catch(error => log(error.message)));
-elements.bridgeSelect.addEventListener('change', event => { activeBridgeId = event.target.value; refreshSnapshot().catch(error => log(error.message)); });
+elements.bridgeSelect.addEventListener('change', event => {
+  activeBridgeId = event.target.value;
+  refreshSnapshot().catch(error => log(error.message));
+  refreshReviewSurfaces().catch(error => log(error.message));
+});
 document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => command(button.dataset.command).then(refreshSnapshot).catch(error => log(error.message))));
-document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => captureScreen(false, button.dataset.tab, button)));
 document.querySelector('#captureProof').addEventListener('click', async () => { const challenge = `bridge-ui-${Date.now()}`; try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); } });
 async function captureScreen(fullViewport, target = null, trigger = null) {
   if (!activeBridgeId) return;

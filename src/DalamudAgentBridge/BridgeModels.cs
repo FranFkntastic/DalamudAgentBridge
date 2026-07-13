@@ -77,6 +77,32 @@ public sealed record BridgeCaptureTransactionReceipt(
     DateTimeOffset ReadyAtUtc,
     DateTimeOffset ExpiresAtUtc);
 
+public sealed record ReviewedControlPresentationRequest
+{
+    public string SurfaceId { get; init; } = string.Empty;
+    public IReadOnlyList<string> ControlIds { get; init; } = [];
+    public int? TimeoutMilliseconds { get; init; }
+}
+
+public sealed record ReviewedControlPresentationReceipt(
+    string SurfaceId,
+    string SurfaceLabel,
+    long FrameId,
+    DateTimeOffset RenderedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    IReadOnlyList<Franthropy.Dalamud.AgentBridge.AgentBridgeUiControl> Controls);
+
+public sealed record ReviewedControlActionRequest
+{
+    public string SurfaceId { get; init; } = string.Empty;
+    public string ControlId { get; init; } = string.Empty;
+    public int? TimeoutMilliseconds { get; init; }
+}
+
+public sealed record ReviewedControlActionReceipt(
+    ReviewedControlPresentationReceipt Presentation,
+    PluginBridgeResponse Invocation);
+
 public sealed record PluginBridgeResponse
 {
     public bool Success { get; init; }

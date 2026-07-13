@@ -14,6 +14,12 @@ Open `http://127.0.0.1:45831`.
 
 Use `-NoBuild` after the first run when no source files have changed.
 
+Each named utility instance builds into its own output directory, so a running primary bridge cannot lock the secondary bridge's deployment. For a multibox instance:
+
+```powershell
+.\Run-Bridge.ps1 -InstanceName secondary -Port 45832 -PluginConfigRoot "$env:APPDATA\XIVLauncher-Multibox-2\pluginConfigs"
+```
+
 The normal build also creates a private, loopback-only Dalamud repository at
 `http://127.0.0.1:45831/repository/repo.json`. Add that URL under Dalamud Settings → Experimental → Custom Plugin Repositories. The source repository remains private; no GitHub token is placed in Dalamud configuration.
 
@@ -36,6 +42,12 @@ This reduces accidental persistence and unauthorised local web access; it does n
 ## Frame-validated control
 
 Plugins may expose their own rendered ImGui controls through the shared `AgentBridgeUiReviewRegistry`. Each control has a stable ID, visible bounds, value and enabled state, and is actionable only through its named semantic action. The utility must supply the current review-frame ID; the registry rejects stale, disabled, missing, or replayed controls. This is deliberately not arbitrary coordinate clicking or keyboard injection.
+
+Agents that already know a stable control ID should use `GET /api/bridges/{bridgeId}/controls/{controlId}`. It returns only that control with the current reviewed frame ID and expiry, so the same small response supports guarded invocation and status polling without serializing the plugin's complete control surface.
+
+`POST /api/bridges/{bridgeId}/control-presentations` opens an advertised surface and returns up to sixteen requested controls from one current frame. `POST /api/bridges/{bridgeId}/control-actions` presents one control and invokes that exact reviewed frame in one request; it retains the same enabled-state, expiry, and replay checks as the two-request path.
+
+For repeated development, `tools\Test-Bridge.ps1` reuses a successful test result only while the source and test-assembly hashes remain unchanged. `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
 
 ## Protocol convention
 

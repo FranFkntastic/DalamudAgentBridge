@@ -17,6 +17,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<Action, Task> dispatchOnFramework;
     private readonly Func<object> createSnapshot;
     private readonly Func<object> createControlSurface;
+    private readonly Func<string, AgentBridgeUiControlReview> reviewControl;
     private readonly Func<string, long, AgentBridgeUiControlInvocation> invokeControl;
     private readonly Action openWindow;
     private readonly Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation;
@@ -28,13 +29,14 @@ public sealed class AgentBridgeHost : IDisposable
     private Task? listenTask;
     private string? accessToken;
 
-    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
+    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
     {
         this.configuration = configuration;
         this.configDirectory = configDirectory;
         this.dispatchOnFramework = dispatchOnFramework;
         this.createSnapshot = createSnapshot;
         this.createControlSurface = createControlSurface;
+        this.reviewControl = reviewControl;
         this.invokeControl = invokeControl;
         this.openWindow = openWindow;
         this.beginCapturePresentation = beginCapturePresentation;
@@ -91,6 +93,13 @@ public sealed class AgentBridgeHost : IDisposable
                 object? controlSurface = null;
                 await dispatchOnFramework(() => controlSurface = createControlSurface()).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Control surface captured.", controlSurface);
+            case "get-control":
+                if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A control ID is required.");
+                AgentBridgeUiControlReview? controlReview = null;
+                await dispatchOnFramework(() => controlReview = reviewControl(request.Target)).ConfigureAwait(false);
+                return controlReview!.Control == null
+                    ? new AgentBridgeResponse { Success = false, Message = "The requested control is not rendered.", Receipt = controlReview }
+                    : AgentBridgeResponse.Ok("Reviewed control captured.", controlReview);
             case "invoke-control":
                 if (string.IsNullOrWhiteSpace(request.Target) || request.FrameId is not { } frameId)
                     return AgentBridgeResponse.Fail("A control ID and rendered frame ID are required.");
