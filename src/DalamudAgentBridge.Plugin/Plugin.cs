@@ -58,6 +58,7 @@ public sealed class Plugin : IDalamudPlugin
             action => framework.RunOnTick(action),
             CreateSnapshot,
             () => reviewRegistry.Snapshot(),
+            controlId => reviewRegistry.Review(controlId),
             (controlId, frameId) => reviewRegistry.Invoke(controlId, frameId),
             OpenWindow,
             target => captureTransactions.Begin(target),
@@ -207,7 +208,7 @@ public sealed class Plugin : IDalamudPlugin
         currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
         bridgeWindowOpen = WindowOpen,
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "invoke-control", "capture-presentation-transaction" },
+        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction" },
         screenshotsEnabled = configuration.EnableScreenshots,
     };
 }

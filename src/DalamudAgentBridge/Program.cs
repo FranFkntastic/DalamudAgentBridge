@@ -20,6 +20,7 @@ builder.Services.AddSingleton<CompositedCaptureQueue>();
 builder.Services.AddSingleton<WindowsGraphicsCaptureService>();
 builder.Services.AddSingleton<UnfocusedReviewCaptureQueue>();
 builder.Services.AddSingleton<DalamudLogWatcher>();
+builder.Services.AddSingleton<ReviewedControlPresentationService>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -70,12 +71,15 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-proof",
     "capture-proof",
     "open-main-window",
+    "close-main-window",
     "open-acquisition-diagnostics",
     "select-main-tab",
     "capture-input-state",
     "stop-route",
     "capture-screen",
+    "get-review-surfaces",
     "get-control-surface",
+    "get-control",
     "invoke-control",
 };
 
@@ -147,6 +151,107 @@ app.MapGet("/api/bridges/{id}/controls", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Bridge control-surface read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/controls/{controlId}", async (
+    string id,
+    string controlId,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    try
+    {
+        var response = await client.SendAsync(instance, "get-control", new BridgeCommandRequest { Target = controlId }, cancellationToken);
+        return response.Success ? Results.Ok(response) : Results.NotFound(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Bridge control review failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/control-presentations", async (
+    string id,
+    ReviewedControlPresentationRequest request,
+    BridgeRegistry registry,
+    ReviewedControlPresentationService presentationService,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var receipt = await presentationService.PresentAsync(instance, request, cancellationToken);
+        return Results.Ok(new { success = true, message = "Reviewed controls are presented and ready.", receipt });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    {
+        return Results.Problem("Reviewed controls did not become ready before the presentation timeout.", statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+    {
+        return Results.Problem($"Reviewed control presentation failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/control-actions", async (
+    string id,
+    ReviewedControlActionRequest request,
+    BridgeRegistry registry,
+    ReviewedControlPresentationService presentationService,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var receipt = await presentationService.PresentAndInvokeAsync(instance, request, cancellationToken);
+        return Results.Ok(new { success = true, message = "Reviewed control was presented and invoked.", receipt });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    {
+        return Results.Problem("Reviewed control did not become ready before the action timeout.", statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+    {
+        return Results.Problem($"Reviewed control action failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/review-surfaces", async (
+    string id,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    try
+    {
+        var response = await client.SendAsync(instance, "get-review-surfaces", null, cancellationToken);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Bridge review-surface discovery failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 
