@@ -602,22 +602,33 @@ app.MapGet("/api/composited-capture-requests/{requestId}", (string requestId, Co
 
 app.MapPost("/api/bridges/{id}/unfocused-review-capture-requests", (
     string id,
+    string? target,
     BridgeRegistry registry,
     UnfocusedReviewCaptureQueue captureQueue) =>
 {
     var instance = registry.Find(id);
     if (instance == null)
         return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
-    var target = instance.PluginName switch
+    var defaultTarget = instance.PluginName switch
     {
         "DalamudAgentBridge" => "bridge.main-window",
         "MarketMafioso" => "mmf.main-window",
         _ => null,
     };
-    if (target == null)
+    if (defaultTarget == null)
         return Results.BadRequest(new { success = false, message = "This plugin has not adopted the capture-presentation transaction protocol." });
 
-    var request = captureQueue.Queue(instance, target);
+    var requestedTarget = string.IsNullOrWhiteSpace(target) ? defaultTarget : target;
+    var targetAllowed = instance.PluginName switch
+    {
+        "DalamudAgentBridge" => requestedTarget == "bridge.main-window",
+        "MarketMafioso" => requestedTarget is "mmf.main-window" or "mmf.main-window.compact",
+        _ => false,
+    };
+    if (!targetAllowed)
+        return Results.BadRequest(new { success = false, message = "The requested capture presentation target is not registered for this plugin." });
+
+    var request = captureQueue.Queue(instance, requestedTarget);
     return Results.Accepted($"/api/unfocused-review-capture-requests/{request.RequestId}", new { success = true, request });
 });
 
