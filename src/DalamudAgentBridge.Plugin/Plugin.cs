@@ -19,6 +19,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Configuration configuration;
     private readonly AgentBridgeViewportCaptureService viewportCapture;
     private readonly AgentBridgeHost bridgeHost;
+    private readonly DalamudPluginLifecycleService pluginLifecycle;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private int windowOpenState;
@@ -52,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
             action => framework.RunOnTick(action),
             textureProvider,
             textureReadbackProvider);
+        pluginLifecycle = new DalamudPluginLifecycleService(pluginInterface, commandManager, framework);
         bridgeHost = new AgentBridgeHost(
             configuration,
             pluginInterface.GetPluginConfigDirectory(),
@@ -64,7 +66,10 @@ public sealed class Plugin : IDalamudPlugin
             target => captureTransactions.Begin(target),
             transactionId => captureTransactions.Complete(transactionId),
             transactionId => captureTransactions.Cancel(transactionId),
-            viewportCapture.CaptureAsync);
+            viewportCapture.CaptureAsync,
+            () => pluginLifecycle.Snapshot(),
+            async (internalName, enabled, cancellationToken) =>
+                await pluginLifecycle.SetEnabledAsync(internalName, enabled, cancellationToken).ConfigureAwait(false));
         bridgeHost.Start();
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -208,7 +213,7 @@ public sealed class Plugin : IDalamudPlugin
         currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
         bridgeWindowOpen = WindowOpen,
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction" },
+        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "list-plugins", "enable-plugin", "disable-plugin" },
         screenshotsEnabled = configuration.EnableScreenshots,
     };
 }

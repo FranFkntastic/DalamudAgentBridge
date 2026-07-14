@@ -21,6 +21,9 @@ builder.Services.AddSingleton<WindowsGraphicsCaptureService>();
 builder.Services.AddSingleton<UnfocusedReviewCaptureQueue>();
 builder.Services.AddSingleton<DalamudLogWatcher>();
 builder.Services.AddSingleton<ReviewedControlPresentationService>();
+builder.Services.AddSingleton<PluginLifecycleClient>();
+builder.Services.AddSingleton<IPluginLifecycleClient>(services => services.GetRequiredService<PluginLifecycleClient>());
+builder.Services.AddSingleton<LocalPluginBuildReplacementService>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -81,6 +84,9 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-control-surface",
     "get-control",
     "invoke-control",
+    "list-plugins",
+    "enable-plugin",
+    "disable-plugin",
 };
 
 app.MapGet("/api/bridges", (BridgeRegistry registry) =>
@@ -109,6 +115,88 @@ app.MapGet("/api/bridges/{id}/snapshot", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Bridge snapshot failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/plugins", async (
+    string id,
+    BridgeRegistry registry,
+    PluginLifecycleClient lifecycleClient,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var receipt = await lifecycleClient.ListAsync(instance, cancellationToken);
+        return Results.Ok(new { success = true, message = "Installed plugin state captured.", receipt });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+    {
+        return Results.Problem($"Plugin state read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/plugins/{internalName}/enable", async (
+    string id,
+    string internalName,
+    BridgeRegistry registry,
+    PluginLifecycleClient lifecycleClient,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        return Results.Ok(await lifecycleClient.SetEnabledAsync(instance, internalName, true, cancellationToken));
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+    {
+        return Results.Problem($"Plugin enable failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/plugins/{internalName}/disable", async (
+    string id,
+    string internalName,
+    BridgeRegistry registry,
+    PluginLifecycleClient lifecycleClient,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        return Results.Ok(await lifecycleClient.SetEnabledAsync(instance, internalName, false, cancellationToken));
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+    {
+        return Results.Problem($"Plugin disable failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/plugins/{internalName}/local-build", async (
+    string id,
+    string internalName,
+    LocalPluginBuildReplacementRequest request,
+    BridgeRegistry registry,
+    LocalPluginBuildReplacementService replacementService,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var receipt = await replacementService.ReplaceAsync(instance, internalName, request, cancellationToken);
+        return Results.Ok(new { success = true, message = "Local plugin build installed and verified.", receipt });
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or KeyNotFoundException or OperationCanceledException or AggregateException)
+    {
+        return Results.Problem($"Local plugin build replacement failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 

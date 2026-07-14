@@ -109,3 +109,45 @@ public sealed record PluginBridgeResponse
     public string Message { get; init; } = string.Empty;
     public JsonElement? Receipt { get; init; }
 }
+
+public sealed record InstalledPluginSnapshot
+{
+    public DateTimeOffset CapturedAtUtc { get; init; }
+    public IReadOnlyList<InstalledPluginState> Plugins { get; init; } = [];
+}
+
+public sealed record InstalledPluginState
+{
+    public string InternalName { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string Version { get; init; } = string.Empty;
+    public bool IsLoaded { get; init; }
+    public bool IsDev { get; init; }
+    public bool IsTesting { get; init; }
+    public bool IsThirdParty { get; init; }
+    public bool IsOutdated { get; init; }
+    public bool IsBanned { get; init; }
+    public bool IsOrphaned { get; init; }
+    public bool IsDecommissioned { get; init; }
+}
+
+public sealed record LocalPluginBuildReplacementRequest
+{
+    public string SourceDirectory { get; init; } = string.Empty;
+    public string? ExpectedCurrentVersion { get; init; }
+    public string? ExpectedMainDllSha256 { get; init; }
+    public bool EnableAfterReplacement { get; init; } = true;
+    public bool PreserveInstalledManifest { get; init; } = true;
+}
+
+public sealed record LocalPluginBuildReplacementReceipt(
+    string InternalName,
+    string Version,
+    string SourceDirectory,
+    string InstalledDirectory,
+    string PreviousMainDllSha256,
+    string InstalledMainDllSha256,
+    bool WasLoaded,
+    bool IsLoaded,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc);

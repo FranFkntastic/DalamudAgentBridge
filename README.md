@@ -29,6 +29,8 @@ The normal build also creates a private, loopback-only Dalamud repository at
 - Requires a per-run, HTTP-only local dashboard session for every bridge API and image request.
 - Reads DPAPI-protected bridge access tokens locally; never returns them to clients.
 - Enforces its own command allowlist in addition to each plugin's allowlist.
+- Plugin lifecycle actions address an exact installed-plugin internal name, refuse to manage the bridge itself, and verify the resulting Dalamud state before returning.
+- Local-build replacement validates the source manifest and optional DLL hash, backs up the installed files, and rolls back if replacement or reload fails.
 - MMF currently exposes state/window/tab control, proof capture, input diagnostics, and route stop. It does not expose route start or purchase commands.
 
 ## Screenshot privacy
@@ -46,6 +48,17 @@ Plugins may expose their own rendered ImGui controls through the shared `AgentBr
 Agents that already know a stable control ID should use `GET /api/bridges/{bridgeId}/controls/{controlId}`. It returns only that control with the current reviewed frame ID and expiry, so the same small response supports guarded invocation and status polling without serializing the plugin's complete control surface.
 
 `POST /api/bridges/{bridgeId}/control-presentations` opens an advertised surface and returns up to sixteen requested controls from one current frame. `POST /api/bridges/{bridgeId}/control-actions` presents one control and invokes that exact reviewed frame in one request; it retains the same enabled-state, expiry, and replay checks as the two-request path.
+
+## Plugin lifecycle
+
+The standalone connector manages installed plugins without automating the Plugin Installer window:
+
+- `GET /api/bridges/{bridgeId}/plugins`
+- `POST /api/bridges/{bridgeId}/plugins/{internalName}/enable`
+- `POST /api/bridges/{bridgeId}/plugins/{internalName}/disable`
+- `POST /api/bridges/{bridgeId}/plugins/{internalName}/local-build`
+
+The local-build request accepts `sourceDirectory`, optional `expectedCurrentVersion` and `expectedMainDllSha256` guards, `enableAfterReplacement`, and `preserveInstalledManifest` (default `true`). Preserving the installed manifest keeps a hotfix build attached to the package version Dalamud already resolved. It replaces an already installed plugin only; installing a previously unknown repository plugin remains outside this control surface.
 
 For repeated development, `tools\Test-Bridge.ps1` reuses a successful test result only while the source and test-assembly hashes remain unchanged. `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
 
