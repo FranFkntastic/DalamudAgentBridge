@@ -26,6 +26,7 @@ public sealed class NamedPipeBridgeClient
         {
             "capture-screen" => TimeSpan.FromSeconds(15),
             "begin-capture-presentation" => TimeSpan.FromSeconds(10),
+            "enable-plugin" or "disable-plugin" => TimeSpan.FromSeconds(25),
             _ => DefaultTimeout,
         });
         await using var pipe = new NamedPipeClientStream(

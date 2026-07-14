@@ -1,5 +1,6 @@
 using Franthropy.Dalamud.AgentBridge;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Security.Cryptography;
@@ -24,12 +25,14 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation;
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation;
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
+    private readonly Func<object> createPluginSnapshot;
+    private readonly Func<string, bool, CancellationToken, Task<object>> setPluginEnabled;
     private readonly JsonSerializerOptions jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private CancellationTokenSource? cancellation;
     private Task? listenTask;
     private string? accessToken;
 
-    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport)
+    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport, Func<object> createPluginSnapshot, Func<string, bool, CancellationToken, Task<object>> setPluginEnabled)
     {
         this.configuration = configuration;
         this.configDirectory = configDirectory;
@@ -43,6 +46,8 @@ public sealed class AgentBridgeHost : IDisposable
         this.completeCapturePresentation = completeCapturePresentation;
         this.cancelCapturePresentation = cancelCapturePresentation;
         this.captureViewport = captureViewport;
+        this.createPluginSnapshot = createPluginSnapshot;
+        this.setPluginEnabled = setPluginEnabled;
     }
 
     public string PipeName => $"DalamudAgentBridge.{Environment.ProcessId}";
@@ -111,6 +116,23 @@ public sealed class AgentBridgeHost : IDisposable
             case "open-main-window":
                 await dispatchOnFramework(openWindow).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Agent Bridge window opened.");
+            case "list-plugins":
+                object? pluginSnapshot = null;
+                await dispatchOnFramework(() => pluginSnapshot = createPluginSnapshot()).ConfigureAwait(false);
+                return AgentBridgeResponse.Ok("Installed plugin state captured.", pluginSnapshot);
+            case "enable-plugin":
+            case "disable-plugin":
+                if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A plugin internal name is required.");
+                try
+                {
+                    var enable = string.Equals(request.Command, "enable-plugin", StringComparison.OrdinalIgnoreCase);
+                    var lifecycleReceipt = await setPluginEnabled(request.Target, enable, cancellationToken).ConfigureAwait(false);
+                    return AgentBridgeResponse.Ok(enable ? "Plugin enabled." : "Plugin disabled.", lifecycleReceipt);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or OperationCanceledException)
+                {
+                    return AgentBridgeResponse.Fail($"Plugin lifecycle change failed: {ex.Message}");
+                }
             case "begin-capture-presentation":
                 if (!configuration.EnableScreenshots) return AgentBridgeResponse.Fail("Agent Bridge screenshots are disabled in the in-game plugin settings.");
                 if (!string.Equals(request.Target, "bridge.main-window", StringComparison.Ordinal)) return AgentBridgeResponse.Fail("The requested capture presentation target is not registered.");
