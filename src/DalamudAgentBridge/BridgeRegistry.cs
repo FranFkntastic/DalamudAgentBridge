@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using Franthropy.Dalamud.AgentBridge;
@@ -117,7 +118,7 @@ public sealed class BridgeRegistry
         {
             return !Process.GetProcessById(processId).HasExited;
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception)
         {
             return false;
         }
