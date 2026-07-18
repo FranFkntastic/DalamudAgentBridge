@@ -1,4 +1,5 @@
 using Franthropy.Dalamud.AgentBridge;
+using Franthropy.Dalamud.Travel;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,12 +28,14 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly Func<object> createPluginSnapshot;
     private readonly Func<string, bool, CancellationToken, Task<object>> setPluginEnabled;
+    private readonly Func<object> createLoginSnapshot;
+    private readonly Func<string, LifestreamLoginSubmissionResult> beginLogin;
     private readonly JsonSerializerOptions jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private CancellationTokenSource? cancellation;
     private Task? listenTask;
     private string? accessToken;
 
-    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport, Func<object> createPluginSnapshot, Func<string, bool, CancellationToken, Task<object>> setPluginEnabled)
+    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport, Func<object> createPluginSnapshot, Func<string, bool, CancellationToken, Task<object>> setPluginEnabled, Func<object> createLoginSnapshot, Func<string, LifestreamLoginSubmissionResult> beginLogin)
     {
         this.configuration = configuration;
         this.configDirectory = configDirectory;
@@ -48,6 +51,8 @@ public sealed class AgentBridgeHost : IDisposable
         this.captureViewport = captureViewport;
         this.createPluginSnapshot = createPluginSnapshot;
         this.setPluginEnabled = setPluginEnabled;
+        this.createLoginSnapshot = createLoginSnapshot;
+        this.beginLogin = beginLogin;
     }
 
     public string PipeName => $"DalamudAgentBridge.{Environment.ProcessId}";
@@ -116,6 +121,17 @@ public sealed class AgentBridgeHost : IDisposable
             case "open-main-window":
                 await dispatchOnFramework(openWindow).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Agent Bridge window opened.");
+            case "get-login-ui":
+                object? loginSnapshot = null;
+                await dispatchOnFramework(() => loginSnapshot = createLoginSnapshot()).ConfigureAwait(false);
+                return AgentBridgeResponse.Ok("Rendered title and login UI captured without requiring a local player.", loginSnapshot);
+            case "begin-login":
+                if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A Character Name@Home World target is required.");
+                LifestreamLoginSubmissionResult? loginReceipt = null;
+                await dispatchOnFramework(() => loginReceipt = beginLogin(request.Target)).ConfigureAwait(false);
+                return loginReceipt!.Success
+                    ? AgentBridgeResponse.Ok("Login submitted; rendered and logged-in postconditions remain required.", loginReceipt)
+                    : new AgentBridgeResponse { Success = false, Message = loginReceipt.Message, Receipt = loginReceipt };
             case "list-plugins":
                 object? pluginSnapshot = null;
                 await dispatchOnFramework(() => pluginSnapshot = createPluginSnapshot()).ConfigureAwait(false);

@@ -3,7 +3,9 @@ using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Franthropy.Dalamud.AgentBridge;
+using Franthropy.Dalamud.Travel;
 using System;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 
@@ -22,6 +24,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginLifecycleService pluginLifecycle;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
+    private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
+    private readonly DalamudLifestreamLogin lifestreamLogin;
     private int windowOpenState;
     private int requestedCollapsedState;
     private int windowCollapsedState;
@@ -32,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
         ICommandManager commandManager,
         IPlayerState playerState,
         IFramework framework,
+        IGameGui gameGui,
         ITextureProvider textureProvider,
         ITextureReadbackProvider textureReadbackProvider)
     {
@@ -39,6 +44,8 @@ public sealed class Plugin : IDalamudPlugin
         this.commandManager = commandManager;
         this.playerState = playerState;
         this.framework = framework;
+        renderedTextActions = new(gameGui);
+        lifestreamLogin = new(pluginInterface);
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         configuration.Initialize(pluginInterface);
         captureTransactions = new AgentBridgeUiCaptureTransactionManager(
@@ -69,7 +76,9 @@ public sealed class Plugin : IDalamudPlugin
             viewportCapture.CaptureAsync,
             () => pluginLifecycle.Snapshot(),
             async (internalName, enabled, cancellationToken) =>
-                await pluginLifecycle.SetEnabledAsync(internalName, enabled, cancellationToken).ConfigureAwait(false));
+                await pluginLifecycle.SetEnabledAsync(internalName, enabled, cancellationToken).ConfigureAwait(false),
+            CreateLoginSnapshot,
+            BeginLogin);
         bridgeHost.Start();
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -213,7 +222,34 @@ public sealed class Plugin : IDalamudPlugin
         currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
         bridgeWindowOpen = WindowOpen,
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "list-plugins", "enable-plugin", "disable-plugin" },
+        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin" },
         screenshotsEnabled = configuration.EnableScreenshots,
     };
+
+    private object CreateLoginSnapshot()
+    {
+        string[] addonNames =
+        [
+            "_TitleMenu", "TitleDCWorldMap", "TitleConnect", "_CharaSelectWorldServer",
+            "_CharaSelectListMenu", "_CharaSelectReturn", "SelectYesno", "SelectOk", "_TextError",
+            "LobbyDKTWorldList", "LobbyWKTCheckHome", "NowLoading",
+        ];
+        return new
+        {
+            capturedAtUtc = DateTimeOffset.UtcNow,
+            playerAvailable = !string.IsNullOrWhiteSpace(playerState.CharacterName),
+            addons = addonNames.Select(renderedTextActions.CaptureVisibleText).ToArray(),
+            provenance = "RenderedAddon",
+        };
+    }
+
+    private LifestreamLoginSubmissionResult BeginLogin(string target)
+    {
+        var separator = target.LastIndexOf('@');
+        if (separator <= 0 || separator == target.Length - 1)
+            return new(false, "InvalidRequest", "Target must be Character Name@Home World.");
+        if (!LifestreamLoginRequest.TryCreate(target[..separator], target[(separator + 1)..], out var request, out var error))
+            return new(false, "InvalidRequest", error);
+        return lifestreamLogin.TryBegin(request!);
+    }
 }
