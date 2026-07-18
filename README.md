@@ -29,9 +29,13 @@ The normal build also creates a private, loopback-only Dalamud repository at
 - Requires a per-run, HTTP-only local dashboard session for every bridge API and image request.
 - Reads DPAPI-protected bridge access tokens locally; never returns them to clients.
 - Enforces its own command allowlist in addition to each plugin's allowlist.
+- Exposes pre-player title, lobby, character-list, queue, and error text with `RenderedAddon` provenance; `begin-login` delegates low-level lobby mechanics to Lifestream and never receives account credentials.
+- Game agents, client state, packets, and plugin IPC may supply capability and diagnostics, but rendered identity/confirmation plus the final plugin snapshot remain required at consequential boundaries. A disagreement must fail closed instead of silently choosing one source.
 - Plugin lifecycle actions address an exact installed-plugin internal name, refuse to manage the bridge itself, and verify the resulting Dalamud state before returning.
 - Local-build replacement validates the source manifest and optional DLL hash, backs up the installed files, and rolls back if replacement or reload fails.
 - MMF currently exposes state/window/tab control, proof capture, input diagnostics, and route stop. It does not expose route start or purchase commands.
+
+The in-game connector also supports `get-login-ui` and `begin-login` on its authenticated named pipe. Use `tools/Invoke-InGameBridge.ps1`; a login target is written as `Character Name@Home World`, and success means only that Lifestream accepted the work. The caller must still prove the rendered character selection and the eventual logged-in character/world/build.
 
 ## Screenshot privacy
 
