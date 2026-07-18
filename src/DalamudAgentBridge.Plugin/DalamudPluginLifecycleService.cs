@@ -38,7 +38,8 @@ internal sealed class DalamudPluginLifecycleService
         bool enabled,
         CancellationToken cancellationToken)
     {
-        var before = FindRequired(internalName);
+        var managedPlugin = FindRequiredExposed(internalName, enabled);
+        var before = ToState(managedPlugin);
         if (string.Equals(before.InternalName, pluginInterface.Manifest.InternalName, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The bridge cannot change its own lifecycle while serving a request.");
 
@@ -47,7 +48,7 @@ internal sealed class DalamudPluginLifecycleService
 
         var requestedAt = DateTimeOffset.UtcNow;
         var command = enabled ? "/xlenableplugin" : "/xldisableplugin";
-        var displayName = FindRequiredExposed(internalName).Name;
+        var displayName = managedPlugin.Name;
         var accepted = false;
         await framework.RunOnTick(() => accepted = commandManager.ProcessCommand($"{command} \"{EscapeArgument(displayName)}\"")).ConfigureAwait(false);
         if (!accepted)
@@ -58,27 +59,43 @@ internal sealed class DalamudPluginLifecycleService
         while (true)
         {
             timeout.Token.ThrowIfCancellationRequested();
-            var current = FindRequired(internalName);
+            var current = FindRequired(before.InternalName, before.Version, before.IsDev);
             if (current.IsLoaded == enabled)
                 return new PluginLifecycleChangeReceipt(enabled, true, before, current, requestedAt, DateTimeOffset.UtcNow);
             await Task.Delay(100, timeout.Token).ConfigureAwait(false);
         }
     }
 
-    private IExposedPlugin FindRequiredExposed(string internalName)
+    private IExposedPlugin FindRequiredExposed(string internalName, bool enabling)
     {
         var matches = pluginInterface.InstalledPlugins.Where(plugin =>
             string.Equals(plugin.InternalName, internalName, StringComparison.OrdinalIgnoreCase)).ToArray();
-        return matches.Length switch
+        if (matches.Length == 1)
+            return matches[0];
+        if (matches.Length == 0)
+            throw new KeyNotFoundException($"Plugin '{internalName}' is not installed.");
+
+        var preferred = enabling
+            ? matches.Where(plugin => plugin.IsDev).ToArray()
+            : matches.Where(plugin => plugin.IsLoaded).ToArray();
+        return preferred.Length switch
         {
-            0 => throw new KeyNotFoundException($"Plugin '{internalName}' is not installed."),
-            1 => matches[0],
+            1 => preferred[0],
             _ => throw new InvalidOperationException(
                 $"Plugin '{internalName}' is ambiguous: {string.Join(", ", matches.Select(plugin => $"{plugin.Version} ({(plugin.IsDev ? "dev" : "installed")})"))}."),
         };
     }
 
-    private PluginLifecycleState FindRequired(string internalName) => ToState(FindRequiredExposed(internalName));
+    private PluginLifecycleState FindRequired(string internalName, string version, bool isDev)
+    {
+        var match = pluginInterface.InstalledPlugins.SingleOrDefault(plugin =>
+            string.Equals(plugin.InternalName, internalName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(plugin.Version.ToString(), version, StringComparison.OrdinalIgnoreCase) &&
+            plugin.IsDev == isDev);
+        return match is null
+            ? throw new KeyNotFoundException($"Managed plugin '{internalName}' {version} is no longer installed.")
+            : ToState(match);
+    }
 
     private static PluginLifecycleState ToState(IExposedPlugin plugin) => new(
         plugin.InternalName,
