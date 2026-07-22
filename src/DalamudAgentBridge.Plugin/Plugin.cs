@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Franthropy.Dalamud.AgentBridge;
 using Franthropy.Dalamud.Travel;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
@@ -70,6 +71,7 @@ public sealed class Plugin : IDalamudPlugin
             controlId => reviewRegistry.Review(controlId),
             (controlId, frameId) => reviewRegistry.Invoke(controlId, frameId),
             OpenWindow,
+            GetCaptureSurfaces,
             target => captureTransactions.Begin(target),
             transactionId => captureTransactions.Complete(transactionId),
             transactionId => captureTransactions.Cancel(transactionId),
@@ -114,6 +116,11 @@ public sealed class Plugin : IDalamudPlugin
     private void OnCommand(string command, string arguments) => RequestWindowOpen();
 
     private void OpenWindow() => RequestWindowOpen();
+
+    private static IReadOnlyList<AgentBridgeCaptureSurfaceDescriptor> GetCaptureSurfaces() =>
+    [
+        new("bridge.main-window", "Dalamud Agent Bridge window", 10, IsDefault: true),
+    ];
 
     private void RequestWindowOpen()
     {
@@ -189,7 +196,7 @@ public sealed class Plugin : IDalamudPlugin
             ToggleScreenshotHandoff);
         ImGui.Spacing();
         ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This standalone plugin provides its own reviewed capture surface.");
-            captureRegion = new AgentBridgeViewportRegion(
+        captureRegion = new AgentBridgeViewportRegion(
             ImGui.GetWindowPos(),
             ImGui.GetWindowSize(),
             ImGui.GetMainViewport().Pos,

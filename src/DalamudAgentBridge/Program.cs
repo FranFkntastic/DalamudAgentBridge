@@ -21,6 +21,7 @@ builder.Services.AddSingleton<WindowsGraphicsCaptureService>();
 builder.Services.AddSingleton<UnfocusedReviewCaptureQueue>();
 builder.Services.AddSingleton<DalamudLogWatcher>();
 builder.Services.AddSingleton<ReviewedControlPresentationService>();
+builder.Services.AddSingleton<CaptureSurfaceDiscoveryService>();
 builder.Services.AddSingleton<PluginLifecycleClient>();
 builder.Services.AddSingleton<IPluginLifecycleClient>(services => services.GetRequiredService<PluginLifecycleClient>());
 builder.Services.AddSingleton<LocalPluginBuildReplacementService>();
@@ -80,6 +81,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "capture-input-state",
     "stop-route",
     "capture-screen",
+    "get-capture-surfaces",
     "get-review-surfaces",
     "get-control-surface",
     "get-control",
@@ -343,6 +345,27 @@ app.MapGet("/api/bridges/{id}/review-surfaces", async (
     }
 });
 
+app.MapGet("/api/bridges/{id}/capture-surfaces", async (
+    string id,
+    BridgeRegistry registry,
+    CaptureSurfaceDiscoveryService discoveryService,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+
+    try
+    {
+        var receipt = await discoveryService.GetAsync(instance, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(new { success = true, message = "Capture surfaces discovered.", receipt });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+    {
+        return Results.Problem($"Bridge capture-surface discovery failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
 app.MapPost("/api/bridges/{id}/controls/{controlId}/invoke", async (
     string id,
     string controlId,
@@ -600,36 +623,28 @@ app.MapGet("/api/composited-capture-requests/{requestId}", (string requestId, Co
         ? Results.Ok(new { success = true, request })
         : Results.NotFound(new { success = false, message = "Composited capture request was not found or has expired." }));
 
-app.MapPost("/api/bridges/{id}/unfocused-review-capture-requests", (
+app.MapPost("/api/bridges/{id}/unfocused-review-capture-requests", async (
     string id,
     string? target,
     BridgeRegistry registry,
-    UnfocusedReviewCaptureQueue captureQueue) =>
+    CaptureSurfaceDiscoveryService discoveryService,
+    UnfocusedReviewCaptureQueue captureQueue,
+    CancellationToken cancellationToken) =>
 {
     var instance = registry.Find(id);
     if (instance == null)
         return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
-    var defaultTarget = instance.PluginName switch
-    {
-        "DalamudAgentBridge" => "bridge.main-window",
-        "MarketMafioso" => "mmf.main-window",
-        _ => null,
-    };
-    if (defaultTarget == null)
-        return Results.BadRequest(new { success = false, message = "This plugin has not adopted the capture-presentation transaction protocol." });
 
-    var requestedTarget = string.IsNullOrWhiteSpace(target) ? defaultTarget : target;
-    var targetAllowed = instance.PluginName switch
+    try
     {
-        "DalamudAgentBridge" => requestedTarget == "bridge.main-window",
-        "MarketMafioso" => requestedTarget is "mmf.main-window" or "mmf.main-window.compact",
-        _ => false,
-    };
-    if (!targetAllowed)
-        return Results.BadRequest(new { success = false, message = "The requested capture presentation target is not registered for this plugin." });
-
-    var request = captureQueue.Queue(instance, requestedTarget);
-    return Results.Accepted($"/api/unfocused-review-capture-requests/{request.RequestId}", new { success = true, request });
+        var surface = await discoveryService.ResolveAsync(instance, target, cancellationToken).ConfigureAwait(false);
+        var request = captureQueue.Queue(instance, surface.Id);
+        return Results.Accepted($"/api/unfocused-review-capture-requests/{request.RequestId}", new { success = true, request });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
 });
 
 app.MapGet("/api/unfocused-review-capture-requests/{requestId}", (string requestId, UnfocusedReviewCaptureQueue captureQueue) =>

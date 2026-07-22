@@ -1,16 +1,22 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('hello', 'get-snapshot', 'get-login-ui', 'begin-login')]
+    [ValidateSet(
+        'hello', 'get-snapshot', 'get-login-ui', 'begin-login',
+        'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
+        'get-control', 'review-control', 'invoke-control',
+        'open-main-window', 'close-main-window', 'select-main-tab')]
     [string]$Command = 'hello',
     [string]$Target,
+    [long]$FrameId,
     [int]$ProcessId,
+    [string]$PluginConfigName = 'DalamudAgentBridge',
     [string]$PluginConfigRoot = (Join-Path $env:APPDATA 'XIVLauncher\pluginConfigs')
 )
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
-$configPath = Join-Path $PluginConfigRoot 'DalamudAgentBridge.json'
-$discoveryDirectory = Join-Path $PluginConfigRoot 'DalamudAgentBridge\agent-bridge'
+$configPath = Join-Path $PluginConfigRoot "$PluginConfigName.json"
+$discoveryDirectory = Join-Path $PluginConfigRoot "$PluginConfigName\agent-bridge"
 $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
 $discoveries = @(Get-ChildItem -LiteralPath $discoveryDirectory -Filter 'discovery-*.json' -File -ErrorAction SilentlyContinue |
     ForEach-Object {
@@ -35,6 +41,7 @@ try {
         [Security.Cryptography.DataProtectionScope]::CurrentUser)
     $request = @{ token = [Text.Encoding]::UTF8.GetString($tokenBytes); command = $Command; fullViewport = $false }
     if (-not [string]::IsNullOrWhiteSpace($Target)) { $request.target = $Target }
+    if ($FrameId -gt 0) { $request.frameId = $FrameId }
 
     $pipe = [IO.Pipes.NamedPipeClientStream]::new(
         '.',
