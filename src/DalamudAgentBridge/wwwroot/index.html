@@ -51,9 +51,9 @@
         <p id="controlSurface" class="privacy-note">Open a bridge-enabled plugin window to inspect its registered controls.</p>
       </article>
 
-      <article class="panel mmf-only">
+      <article class="panel">
         <p class="eyebrow">REVIEW CONTROL</p>
-        <h2>Main-window tabs</h2>
+        <h2>Plugin review surfaces</h2>
         <div id="tabButtons" class="button-grid"></div>
       </article>
 
@@ -75,7 +75,7 @@
       <article class="panel span-2">
         <div class="panel-title">
           <div><p class="eyebrow">RENDERED VIEW</p><h2>Actual in-game viewport</h2></div>
-          <div class="capture-actions"><button id="captureUnfocused">Capture unfocused review</button><button id="captureScreen" class="secondary">Capture plugin window</button><button id="captureContext" class="secondary">Capture native viewport</button><button id="captureComposited" class="secondary">Capture composited game window</button><button id="clearCapture" class="secondary">Clear saved capture</button></div>
+          <div class="capture-actions"><select id="captureSurfaceSelect" aria-label="Plugin capture surface"></select><button id="captureUnfocused">Capture unfocused review</button><button id="captureScreen" class="secondary">Capture plugin window</button><button id="captureContext" class="secondary">Capture native viewport</button><button id="captureComposited" class="secondary">Capture composited game window</button><button id="clearCapture" class="secondary">Clear saved capture</button></div>
         </div>
         <div id="captureMeta" class="capture-meta">No rendered frame captured yet.</div>
         <p class="privacy-note">Captures are retained as DPAPI-encrypted local review data for 30 minutes. The dashboard decrypts only in memory after its authenticated local session check. Unfocused review uses a short, frame-confirmed plugin presentation transaction and Windows Graphics Capture without activating FFXIV; all plaintext pixels remain in memory and are zeroed after vault storage.</p>

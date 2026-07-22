@@ -3,6 +3,7 @@ const elements = {
   identity: document.querySelector('#identity'), routeState: document.querySelector('#routeState'),
   proofReceipt: document.querySelector('#proofReceipt'), activityLog: document.querySelector('#activityLog'),
   captureImage: document.querySelector('#captureImage'), captureMeta: document.querySelector('#captureMeta'),
+  captureSurfaceSelect: document.querySelector('#captureSurfaceSelect'),
   controlSurface: document.querySelector('#controlSurface'),
 };
 let bridges = [];
@@ -27,7 +28,26 @@ async function discover() {
   elements.connectionState.classList.toggle('online', Boolean(activeBridgeId));
   if (activeBridgeId) await refreshSnapshot();
   if (activeBridgeId) await refreshReviewSurfaces();
+  if (activeBridgeId) await refreshCaptureSurfaces();
   if (activeBridgeId) await refreshControls();
+}
+
+async function refreshCaptureSurfaces() {
+  const button = document.querySelector('#captureUnfocused');
+  if (!activeBridgeId) {
+    elements.captureSurfaceSelect.innerHTML = '';
+    elements.captureSurfaceSelect.hidden = true;
+    button.disabled = true;
+    return;
+  }
+  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/capture-surfaces`, { cache: 'no-store' });
+  const body = await response.json();
+  const surfaces = response.ok && body.success && Array.isArray(body.receipt) ? body.receipt : [];
+  elements.captureSurfaceSelect.innerHTML = surfaces.map(surface =>
+    `<option value="${escapeHtml(surface.id)}" ${surface.isDefault ? 'selected' : ''}>${escapeHtml(surface.label)}</option>`).join('');
+  elements.captureSurfaceSelect.hidden = surfaces.length < 2;
+  button.disabled = surfaces.length === 0;
+  button.textContent = surfaces.length === 0 ? 'Unfocused capture unavailable' : 'Capture unfocused review';
 }
 
 async function refreshReviewSurfaces() {
@@ -65,11 +85,9 @@ function renderState(receipt) {
   if (!isMmf) {
     const capabilities = Array.isArray(truth.capabilities) ? truth.capabilities.join(' · ') : 'snapshot only';
     elements.routeState.innerHTML = `<strong>${escapeHtml(truth.hostKind ?? 'Bridge host')}</strong><br><span class="subtitle">Capabilities: ${escapeHtml(capabilities)} · Screenshots: ${truth.screenshotsEnabled ? 'enabled' : 'disabled'}</span>`;
-    document.querySelector('#captureScreen').textContent = 'Capture plugin window';
     return;
   }
   elements.routeState.innerHTML = `<strong>${escapeHtml(route.state)}</strong> · ${escapeHtml(route.statusMessage)}<br><span class="subtitle">Active stop: ${escapeHtml(route.activeWorld ?? 'None')} · Operation: ${escapeHtml(route.activeOperationKind ?? 'None')} / ${escapeHtml(route.activeOperationPhase ?? 'None')}</span>`;
-  document.querySelector('#captureScreen').textContent = 'Capture MMF window';
 }
 
 function renderProof(receipt) {
@@ -179,7 +197,9 @@ async function captureUnfocusedReview() {
   button.disabled = true;
   try {
     elements.captureMeta.textContent = 'Preparing a frame-confirmed plugin presentation…';
-    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/unfocused-review-capture-requests`, { method: 'POST' });
+    const target = elements.captureSurfaceSelect.value;
+    const query = target ? `?target=${encodeURIComponent(target)}` : '';
+    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/unfocused-review-capture-requests${query}`, { method: 'POST' });
     const body = await response.json();
     if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Unfocused review capture could not start');
     const result = await awaitUnfocusedCapture(body.request);

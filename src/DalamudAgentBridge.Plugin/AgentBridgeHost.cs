@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
@@ -22,6 +23,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, AgentBridgeUiControlReview> reviewControl;
     private readonly Func<string, long, AgentBridgeUiControlInvocation> invokeControl;
     private readonly Action openWindow;
+    private readonly Func<IReadOnlyList<AgentBridgeCaptureSurfaceDescriptor>> getCaptureSurfaces;
     private readonly Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation;
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation;
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation;
@@ -35,7 +37,7 @@ public sealed class AgentBridgeHost : IDisposable
     private Task? listenTask;
     private string? accessToken;
 
-    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport, Func<object> createPluginSnapshot, Func<string, bool, CancellationToken, Task<object>> setPluginEnabled, Func<object> createLoginSnapshot, Func<string, LifestreamLoginSubmissionResult> beginLogin)
+    public AgentBridgeHost(Configuration configuration, string configDirectory, Func<Action, Task> dispatchOnFramework, Func<object> createSnapshot, Func<object> createControlSurface, Func<string, AgentBridgeUiControlReview> reviewControl, Func<string, long, AgentBridgeUiControlInvocation> invokeControl, Action openWindow, Func<IReadOnlyList<AgentBridgeCaptureSurfaceDescriptor>> getCaptureSurfaces, Func<string, AgentBridgeUiCaptureTransactionHandle> beginCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> completeCapturePresentation, Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation, Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport, Func<object> createPluginSnapshot, Func<string, bool, CancellationToken, Task<object>> setPluginEnabled, Func<object> createLoginSnapshot, Func<string, LifestreamLoginSubmissionResult> beginLogin)
     {
         this.configuration = configuration;
         this.configDirectory = configDirectory;
@@ -45,6 +47,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.reviewControl = reviewControl;
         this.invokeControl = invokeControl;
         this.openWindow = openWindow;
+        this.getCaptureSurfaces = getCaptureSurfaces;
         this.beginCapturePresentation = beginCapturePresentation;
         this.completeCapturePresentation = completeCapturePresentation;
         this.cancelCapturePresentation = cancelCapturePresentation;
@@ -121,6 +124,8 @@ public sealed class AgentBridgeHost : IDisposable
             case "open-main-window":
                 await dispatchOnFramework(openWindow).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Agent Bridge window opened.");
+            case "get-capture-surfaces":
+                return AgentBridgeResponse.Ok("Capture surfaces captured.", getCaptureSurfaces());
             case "get-login-ui":
                 object? loginSnapshot = null;
                 await dispatchOnFramework(() => loginSnapshot = createLoginSnapshot()).ConfigureAwait(false);
@@ -151,7 +156,9 @@ public sealed class AgentBridgeHost : IDisposable
                 }
             case "begin-capture-presentation":
                 if (!configuration.EnableScreenshots) return AgentBridgeResponse.Fail("Agent Bridge screenshots are disabled in the in-game plugin settings.");
-                if (!string.Equals(request.Target, "bridge.main-window", StringComparison.Ordinal)) return AgentBridgeResponse.Fail("The requested capture presentation target is not registered.");
+                if (string.IsNullOrWhiteSpace(request.Target) ||
+                    !getCaptureSurfaces().Any(surface => string.Equals(surface.Id, request.Target, StringComparison.Ordinal)))
+                    return AgentBridgeResponse.Fail("The requested capture presentation target is not registered.");
                 AgentBridgeUiCaptureTransactionHandle? handle = null;
                 try
                 {
