@@ -25,6 +25,9 @@ builder.Services.AddSingleton<CaptureSurfaceDiscoveryService>();
 builder.Services.AddSingleton<PluginLifecycleClient>();
 builder.Services.AddSingleton<IPluginLifecycleClient>(services => services.GetRequiredService<PluginLifecycleClient>());
 builder.Services.AddSingleton<LocalPluginBuildReplacementService>();
+builder.Services.AddSingleton<AgentBridgeClient>();
+builder.Services.AddSingleton<DevPluginDeploymentService>();
+builder.Services.AddSingleton<PluginCaptureService>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -91,14 +94,148 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "disable-plugin",
 };
 
-app.MapGet("/api/bridges", (BridgeRegistry registry) =>
-    registry.Discover().Select(instance => new BridgeInstanceView(
-        instance.Id,
-        instance.PluginName,
-        instance.PipeName,
-        instance.ProcessId,
-        instance.SchemaVersion,
-        instance.PluginInstanceId)));
+app.MapGet("/api/bridges", (AgentBridgeClient client) => client.List());
+
+app.MapGet("/api/targets/{profile}/{plugin}/health", async (
+    string profile,
+    string plugin,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await client.GetHealthAsync(new BridgeTargetSelector(plugin, profile), cancellationToken);
+        return receipt.Reachable ? Results.Ok(new { success = true, receipt }) : Results.Problem(receipt.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+    {
+        return Results.NotFound(new { success = false, message = ex.Message });
+    }
+});
+
+app.MapGet("/api/targets/{profile}/{plugin}/snapshot", async (
+    string profile,
+    string plugin,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await client.GetSnapshotAsync(new BridgeTargetSelector(plugin, profile), cancellationToken);
+        return Results.Ok(new { success = true, message = "Snapshot captured.", receipt });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or KeyNotFoundException or InvalidOperationException)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/targets/{profile}/{plugin}/logs", (
+    string profile,
+    string plugin,
+    long? cursor,
+    int? limit,
+    AgentBridgeClient client) =>
+{
+    try
+    {
+        return Results.Ok(new { success = true, receipt = client.ReadLogs(new BridgeTargetSelector(plugin, profile), cursor, limit) });
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or KeyNotFoundException or InvalidOperationException)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/targets/{profile}/{plugin}/wait", async (
+    string profile,
+    string plugin,
+    BridgeWaitRequest request,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var timeout = TimeSpan.FromMilliseconds(Math.Clamp(request.TimeoutMilliseconds ?? 30_000, 250, 300_000));
+        var receipt = await client.WaitForSnapshotAsync(
+            new BridgeTargetSelector(plugin, profile), request.Condition, timeout, cancellationToken);
+        return Results.Ok(new { success = true, message = "Snapshot condition satisfied.", receipt });
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    {
+        return Results.Problem("Snapshot condition was not satisfied before the timeout.", statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or KeyNotFoundException or InvalidOperationException)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/targets/{profile}/{plugin}/actions", async (
+    string profile,
+    string plugin,
+    ReviewedControlActionRequest request,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await client.ActAndObserveAsync(new BridgeTargetSelector(plugin, profile), request, cancellationToken);
+        return Results.Ok(new { success = true, message = "Reviewed action completed with its observation receipt.", receipt });
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    {
+        return Results.Problem("Reviewed action did not satisfy its completion contract before the timeout.", statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or KeyNotFoundException or InvalidOperationException or InvalidDataException)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/targets/{profile}/{plugin}/deploy", async (
+    string profile,
+    string plugin,
+    DevPluginDeploymentRequest request,
+    DevPluginDeploymentService deployment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await deployment.DeployAsync(new BridgeTargetSelector(plugin, profile), request, cancellationToken);
+        return Results.Ok(new { success = true, message = "Dev plugin deployed and exact loaded identity verified.", receipt });
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    {
+        return Results.Problem("Dev-plugin reload verification timed out.", statusCode: StatusCodes.Status504GatewayTimeout);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or KeyNotFoundException or TimeoutException)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/events", async (HttpContext context, AgentBridgeClient client, CancellationToken cancellationToken) =>
+{
+    context.Response.ContentType = "text/event-stream";
+    context.Response.Headers.CacheControl = "no-store";
+    string? previous = null;
+    try
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var current = JsonSerializer.Serialize(client.List());
+            if (!string.Equals(previous, current, StringComparison.Ordinal))
+            {
+                await context.Response.WriteAsync($"event: bridges\ndata: {current}\n\n", cancellationToken);
+                await context.Response.Body.FlushAsync(cancellationToken);
+                previous = current;
+            }
+            await Task.Delay(250, cancellationToken);
+        }
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+});
 
 app.MapGet("/api/bridges/{id}/snapshot", async (
     string id,
@@ -117,6 +254,25 @@ app.MapGet("/api/bridges/{id}/snapshot", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Bridge snapshot failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/manifest", async (
+    string id,
+    BridgeRegistry registry,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        return Results.Ok(new { success = true, message = "Bridge manifest captured.", receipt = await client.GetManifestAsync(instance, cancellationToken) });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException or InvalidDataException)
+    {
+        return Results.Problem($"Bridge manifest failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 
@@ -424,8 +580,7 @@ app.MapPost("/api/bridges/{id}/captures", async (
     HttpContext httpContext,
     BridgeCommandRequest? request,
     BridgeRegistry registry,
-    NamedPipeBridgeClient client,
-    ReviewVault reviewVault,
+    PluginCaptureService captureService,
     CancellationToken cancellationToken) =>
 {
     var instance = registry.Find(id);
@@ -434,68 +589,15 @@ app.MapPost("/api/bridges/{id}/captures", async (
 
     try
     {
-        var response = await client.SendAsync(instance, "capture-screen", request, cancellationToken);
-        if (!response.Success || response.Receipt is not { } receiptElement)
-            return Results.BadRequest(response);
-
-        var receipt = receiptElement.Deserialize<BridgeCaptureReceipt>(new JsonSerializerOptions
+        var capture = await captureService.CaptureAsync(instance, request, cancellationToken);
+        return Results.Ok(new
         {
-            PropertyNameCaseInsensitive = true,
+            success = true,
+            message = "Rendered viewport captured and verified.",
+            receipt = capture.Receipt,
+            review = capture.Review,
+            imageUrl = capture.ImagePath,
         });
-        if (receipt == null ||
-            receipt.ProcessId != instance.ProcessId ||
-            receipt.Width is < 1 or > 16384 ||
-            receipt.Height is < 1 or > 16384 ||
-            !string.Equals(receipt.FileName, $"{receipt.CaptureId}.bin", StringComparison.Ordinal) ||
-            !TryResolveCapturePath(instance, receipt.CaptureId, out var capturePath) ||
-            !File.Exists(capturePath))
-            return Results.Problem("Bridge returned an invalid capture receipt.", statusCode: StatusCodes.Status502BadGateway);
-
-        byte[] pngBytes;
-        try
-        {
-            var encryptedBytes = await File.ReadAllBytesAsync(capturePath, cancellationToken);
-            try
-            {
-                pngBytes = AgentBridgeDataProtection.UnprotectBytes(encryptedBytes, instance.PluginInstanceId);
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(encryptedBytes);
-            }
-        }
-        catch (CryptographicException)
-        {
-            return Results.Problem("Bridge capture decryption failed.", statusCode: StatusCodes.Status502BadGateway);
-        }
-        finally
-        {
-            File.Delete(capturePath);
-        }
-
-        var actualSha256 = Convert.ToHexString(SHA256.HashData(pngBytes));
-        if (!string.Equals(actualSha256, receipt.Sha256, StringComparison.OrdinalIgnoreCase))
-        {
-            CryptographicOperations.ZeroMemory(pngBytes);
-            return Results.Problem("Bridge capture hash verification failed.", statusCode: StatusCodes.Status502BadGateway);
-        }
-
-        try
-        {
-            var review = reviewVault.Store(receipt, pngBytes);
-            return Results.Ok(new
-            {
-                success = true,
-                message = response.Message,
-                receipt,
-                review,
-                imageUrl = $"/api/reviews/{review.Id}.png",
-            });
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(pngBytes);
-        }
     }
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
@@ -682,22 +784,3 @@ app.MapDelete("/api/reviews/{reviewId}", (string reviewId, ReviewVault reviewVau
 
 app.MapFallbackToFile("index.html");
 app.Run();
-
-static bool TryResolveCapturePath(BridgeInstance instance, string captureId, out string path)
-{
-    path = string.Empty;
-    if (!Guid.TryParseExact(captureId, "N", out _))
-        return false;
-
-    var bridgeDirectory = Path.GetDirectoryName(instance.DiscoveryPath);
-    if (string.IsNullOrWhiteSpace(bridgeDirectory))
-        return false;
-
-    var captureDirectory = Path.GetFullPath(Path.Combine(bridgeDirectory, "captures"));
-    var candidate = Path.GetFullPath(Path.Combine(captureDirectory, $"{captureId}.bin"));
-    if (!candidate.StartsWith(captureDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        return false;
-
-    path = candidate;
-    return true;
-}

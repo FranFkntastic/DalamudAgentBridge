@@ -1,5 +1,7 @@
 <Solution>
   <Project Path="src/DalamudAgentBridge/DalamudAgentBridge.csproj" />
   <Project Path="src/DalamudAgentBridge.Plugin/DalamudAgentBridge.Plugin.csproj" />
+  <Project Path="src/dab/dab.csproj" />
+  <Project Path="src/dab-mcp/dab-mcp.csproj" />
   <Project Path="tests/DalamudAgentBridge.Tests/DalamudAgentBridge.Tests.csproj" />
 </Solution>

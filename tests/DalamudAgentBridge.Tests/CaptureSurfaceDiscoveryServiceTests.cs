@@ -54,6 +54,7 @@ public sealed class CaptureSurfaceDiscoveryServiceTests
     {
         Id = $"{pluginName}-1",
         PluginName = pluginName,
+        PluginInternalName = pluginName,
         PipeName = "pipe",
         ProcessId = 1,
         SchemaVersion = 1,

@@ -65,6 +65,7 @@ public sealed class Plugin : IDalamudPlugin
         bridgeHost = new AgentBridgeHost(
             configuration,
             pluginInterface.GetPluginConfigDirectory(),
+            pluginInterface.AssemblyLocation.FullName,
             action => framework.RunOnTick(action),
             CreateSnapshot,
             () => reviewRegistry.Snapshot(),

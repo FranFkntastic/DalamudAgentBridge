@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">LOCAL CONTROL SURFACE</p>
         <h1>Dalamud Agent Bridge</h1>
-        <p class="subtitle">Discover, inspect, and safely control bridge-enabled Dalamud plugins. Plugin-specific controls appear only when that plugin advertises them.</p>
+        <p class="subtitle">Exact loaded builds, manifest-declared actions, scoped logs, and verified captures—without desktop control.</p>
       </div>
       <button id="refreshBridges" class="secondary">Refresh instances</button>
     </header>
@@ -26,22 +26,14 @@
     <section class="grid">
       <article class="panel span-2">
         <div class="panel-title">
-          <div><p class="eyebrow">LIVE MIRROR</p><h2>Plugin state</h2></div>
+          <div><p class="eyebrow">EXACT LOADED BUILD</p><h2>Runtime and health</h2></div>
           <button id="refreshSnapshot" class="secondary">Refresh snapshot</button>
         </div>
         <div id="identity" class="identity"></div>
         <div id="routeState" class="route-state"></div>
       </article>
 
-      <article class="panel">
-        <p class="eyebrow">WINDOW CONTROL</p>
-        <h2>In-game surfaces</h2>
-        <div class="button-stack">
-          <button data-command="open-main-window">Open plugin window</button>
-          <button class="mmf-only" data-command="open-acquisition-diagnostics">Open acquisition diagnostics</button>
-          <button class="mmf-only" id="captureProof">Capture proof window</button>
-        </div>
-      </article>
+      <article class="panel span-2"><p class="eyebrow">MANIFEST ACTIONS</p><h2>Semantic plugin actions</h2><div id="manifestActions" class="action-list"><span class="subtitle">Waiting for a versioned manifest.</span></div></article>
 
       <article class="panel span-2">
         <div class="panel-title">
@@ -51,25 +43,10 @@
         <p id="controlSurface" class="privacy-note">Open a bridge-enabled plugin window to inspect its registered controls.</p>
       </article>
 
-      <article class="panel">
+      <article class="panel span-2">
         <p class="eyebrow">REVIEW CONTROL</p>
         <h2>Plugin review surfaces</h2>
         <div id="tabButtons" class="button-grid"></div>
-      </article>
-
-      <article class="panel mmf-only">
-        <p class="eyebrow">SAFE ACTIONS</p>
-        <h2>Diagnostics and cleanup</h2>
-        <div class="button-stack">
-          <button data-command="capture-input-state">Capture market input state</button>
-          <button data-command="stop-route" class="danger">Stop active route</button>
-        </div>
-      </article>
-
-      <article class="panel mmf-only">
-        <p class="eyebrow">PROOF RECEIPT</p>
-        <h2>Rendered acknowledgement</h2>
-        <dl id="proofReceipt" class="facts"><div><dt>Status</dt><dd>No proof loaded</dd></div></dl>
       </article>
 
       <article class="panel span-2">
@@ -83,8 +60,8 @@
       </article>
 
       <article class="panel span-2">
-        <p class="eyebrow">COMMAND LOG</p>
-        <h2>Session activity</h2>
+        <p class="eyebrow">SCOPED ACTIVITY</p>
+        <h2>Bridge receipts and logs</h2>
         <pre id="activityLog">Waiting for bridge discovery…</pre>
       </article>
     </section>
