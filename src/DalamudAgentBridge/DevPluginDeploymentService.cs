@@ -118,6 +118,12 @@ public sealed class DevPluginDeploymentService
             {
                 lastError = exception;
             }
+            catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && !deadline.IsCancellationRequested)
+            {
+                // A disappearing pipe can consume its own per-command timeout while Dalamud reloads.
+                // Keep polling until the deployment deadline instead of treating that transient as caller cancellation.
+                lastError = exception;
+            }
             try { await Task.Delay(100, deadline.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
