@@ -1,274 +1,266 @@
 const elements = {
-  bridgeSelect: document.querySelector('#bridgeSelect'), connectionState: document.querySelector('#connectionState'),
-  identity: document.querySelector('#identity'), routeState: document.querySelector('#routeState'),
-  proofReceipt: document.querySelector('#proofReceipt'), activityLog: document.querySelector('#activityLog'),
-  captureImage: document.querySelector('#captureImage'), captureMeta: document.querySelector('#captureMeta'),
-  captureSurfaceSelect: document.querySelector('#captureSurfaceSelect'),
+  bridgeSelect: document.querySelector('#bridgeSelect'),
+  connectionState: document.querySelector('#connectionState'),
+  identity: document.querySelector('#identity'),
+  routeState: document.querySelector('#routeState'),
+  manifestActions: document.querySelector('#manifestActions'),
   controlSurface: document.querySelector('#controlSurface'),
+  activityLog: document.querySelector('#activityLog'),
+  captureImage: document.querySelector('#captureImage'),
+  captureMeta: document.querySelector('#captureMeta'),
+  captureSurfaceSelect: document.querySelector('#captureSurfaceSelect'),
 };
+
 let bridges = [];
 let activeBridgeId = '';
-let captureObjectUrl = '';
+let activeManifest = null;
 let activeReviewId = '';
+let captureObjectUrl = '';
 const escapeHtml = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
 function log(message, value) {
-  const stamp = new Date().toLocaleTimeString();
   const detail = value ? `\n${JSON.stringify(value, null, 2)}` : '';
-  elements.activityLog.textContent = `[${stamp}] ${message}${detail}\n\n${elements.activityLog.textContent}`;
+  elements.activityLog.textContent = `[${new Date().toLocaleTimeString()}] ${message}${detail}\n\n${elements.activityLog.textContent}`;
+}
+
+async function readJson(response) {
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.detail ?? body.message ?? `Bridge request failed (${response.status})`);
+  return body;
 }
 
 async function discover() {
-  const response = await fetch('/api/bridges');
-  bridges = await response.json();
-  elements.bridgeSelect.innerHTML = bridges.map(bridge => `<option value="${escapeHtml(bridge.id)}">${escapeHtml(bridge.pluginName)} · PID ${escapeHtml(bridge.processId)}</option>`).join('');
+  bridges = await readJson(await fetch('/api/bridges', { cache: 'no-store' }));
+  elements.bridgeSelect.innerHTML = bridges.map(bridge =>
+    `<option value="${escapeHtml(bridge.id)}">${escapeHtml(bridge.pluginInternalName)} · ${escapeHtml(bridge.profileAlias ?? bridge.profileId)} · PID ${escapeHtml(bridge.processId)}</option>`).join('');
   if (!bridges.some(bridge => bridge.id === activeBridgeId)) activeBridgeId = bridges[0]?.id ?? '';
   elements.bridgeSelect.value = activeBridgeId;
-  elements.connectionState.textContent = activeBridgeId ? 'Connected' : 'No bridge found';
+  elements.connectionState.textContent = activeBridgeId ? 'Authenticated' : 'No bridge found';
   elements.connectionState.classList.toggle('online', Boolean(activeBridgeId));
-  if (activeBridgeId) await refreshSnapshot();
-  if (activeBridgeId) await refreshReviewSurfaces();
-  if (activeBridgeId) await refreshCaptureSurfaces();
-  if (activeBridgeId) await refreshControls();
+  if (!activeBridgeId) return;
+  await Promise.all([refreshManifest(), refreshSnapshot(), refreshReviewSurfaces(), refreshCaptureSurfaces(), refreshControls()]);
 }
 
-async function refreshCaptureSurfaces() {
-  const button = document.querySelector('#captureUnfocused');
-  if (!activeBridgeId) {
-    elements.captureSurfaceSelect.innerHTML = '';
-    elements.captureSurfaceSelect.hidden = true;
-    button.disabled = true;
+async function refreshManifest() {
+  if (!activeBridgeId) return;
+  try {
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/manifest`, { cache: 'no-store' }));
+    activeManifest = body.receipt;
+  } catch (error) {
+    activeManifest = null;
+    elements.manifestActions.innerHTML = `<span class="subtitle">${escapeHtml(error.message)}</span>`;
     return;
   }
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/capture-surfaces`, { cache: 'no-store' });
-  const body = await response.json();
-  const surfaces = response.ok && body.success && Array.isArray(body.receipt) ? body.receipt : [];
-  elements.captureSurfaceSelect.innerHTML = surfaces.map(surface =>
-    `<option value="${escapeHtml(surface.id)}" ${surface.isDefault ? 'selected' : ''}>${escapeHtml(surface.label)}</option>`).join('');
-  elements.captureSurfaceSelect.hidden = surfaces.length < 2;
-  button.disabled = surfaces.length === 0;
-  button.textContent = surfaces.length === 0 ? 'Unfocused capture unavailable' : 'Capture unfocused review';
+  const runtime = activeManifest.runtime;
+  elements.identity.innerHTML = [
+    ['Plugin', runtime.pluginInternalName], ['Version', runtime.assemblyVersion],
+    ['Build', runtime.buildConfiguration], ['Process', runtime.processId],
+    ['Profile', activeManifest.profileAlias], ['Protocol', activeManifest.protocolVersion],
+    ['Runtime', runtime.runtimeInstanceId], ['DLL SHA-256', runtime.mainDllSha256],
+  ].map(([label, value]) => `<div class="metric"><small>${escapeHtml(label)}</small><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong></div>`).join('');
+  renderManifestActions(activeManifest.actions ?? []);
+}
+
+function renderManifestActions(actions) {
+  if (!actions.length) {
+    elements.manifestActions.innerHTML = '<span class="subtitle">This plugin advertises inspection surfaces, but no stable semantic action catalog.</span>';
+    return;
+  }
+  elements.manifestActions.innerHTML = actions.map(action => {
+    const properties = action.arguments?.properties ?? [];
+    const inputs = properties.map(argument => {
+      const key = escapeHtml(argument.name);
+      if (Number(argument.kind) === 3 && Array.isArray(argument.allowedValues))
+        return `<label>${key}<select data-action-argument="${key}">${argument.allowedValues.map(value => `<option>${escapeHtml(value)}</option>`).join('')}</select></label>`;
+      const type = Number(argument.kind) === 1 ? 'number' : 'text';
+      const placeholder = Number(argument.kind) === 4 ? 'Item name' : argument.required ? 'Required' : 'Optional';
+      return `<label>${key}<input data-action-argument="${key}" type="${type}" placeholder="${escapeHtml(placeholder)}"></label>`;
+    }).join('');
+    return `<div class="action-row"><div><strong>${escapeHtml(action.label)}</strong><small>${escapeHtml(action.surfaceId)} · ${action.mutating ? 'changes state' : 'read only'}${action.completionOperationKind ? ` · ${escapeHtml(action.completionOperationKind)}` : ''}</small></div><div class="action-arguments">${inputs}</div><button data-manifest-action="${escapeHtml(action.id)}">Run</button></div>`;
+  }).join('');
+  elements.manifestActions.querySelectorAll('[data-manifest-action]').forEach(button =>
+    button.addEventListener('click', () => invokeManifestAction(button.dataset.manifestAction, button)));
+}
+
+async function invokeManifestAction(actionId, button) {
+  const bridge = bridges.find(value => value.id === activeBridgeId);
+  const action = activeManifest?.actions?.find(value => value.id === actionId);
+  if (!bridge || !action) return;
+  const argumentsObject = {};
+  button.closest('.action-row').querySelectorAll('[data-action-argument]').forEach(input => {
+    if (input.value !== '') argumentsObject[input.dataset.actionArgument] = input.type === 'number' ? Number(input.value) : input.value;
+  });
+  button.disabled = true;
+  try {
+    const body = await readJson(await fetch(`/api/targets/${encodeURIComponent(bridge.profileAlias ?? bridge.profileId)}/${encodeURIComponent(bridge.pluginInternalName)}/actions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ surfaceId: action.surfaceId, controlId: action.id, arguments: argumentsObject, waitForCompletion: true }),
+    }));
+    log(`${action.id} completed`, body);
+    await Promise.all([refreshSnapshot(), refreshControls()]);
+  } catch (error) { log(error.message); }
+  finally { button.disabled = false; }
+}
+
+async function refreshSnapshot() {
+  if (!activeBridgeId) return;
+  const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/snapshot`, { cache: 'no-store' }));
+  const truth = body.receipt?.truth ?? body.receipt;
+  const capabilities = activeManifest?.capabilities?.map(value => `${value.id} v${value.version}`).join(' · ') ?? 'legacy snapshot';
+  const status = truth.refreshActive ? 'Refresh running' : truth.transferActive ? 'Transfer running' : truth.route?.state ?? 'Ready';
+  elements.routeState.innerHTML = `<strong>${escapeHtml(status)}</strong><br><span class="subtitle">${escapeHtml(capabilities)}</span><pre class="snapshot-json">${escapeHtml(JSON.stringify(truth, null, 2))}</pre>`;
 }
 
 async function refreshReviewSurfaces() {
   const container = document.querySelector('#tabButtons');
   if (!activeBridgeId) { container.innerHTML = ''; return; }
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/review-surfaces`, { cache: 'no-store' });
-  const body = await response.json();
-  if (!response.ok || !body.success) {
-    container.innerHTML = `<span class="subtitle">${escapeHtml(body.message ?? body.detail ?? 'This plugin does not advertise review surfaces.')}</span>`;
-    return;
-  }
-  const surfaces = Array.isArray(body.receipt) ? [...body.receipt].sort((left, right) => Number(left.order) - Number(right.order)) : [];
-  container.innerHTML = surfaces.map(surface => `<button data-review-surface="${escapeHtml(surface.target)}">${escapeHtml(surface.label)}</button>`).join('');
-  container.querySelectorAll('[data-review-surface]').forEach(button =>
-    button.addEventListener('click', () => captureScreen(false, button.dataset.reviewSurface, button)));
+  try {
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/review-surfaces`, { cache: 'no-store' }));
+    const surfaces = [...(body.receipt ?? [])].sort((left, right) => Number(left.order) - Number(right.order));
+    container.innerHTML = surfaces.map(surface => `<button data-review-command="${escapeHtml(surface.command)}" data-review-target="${escapeHtml(surface.target)}">${escapeHtml(surface.label)}</button>`).join('');
+    container.querySelectorAll('[data-review-command]').forEach(button =>
+      button.addEventListener('click', () => openReviewSurface(button.dataset.reviewCommand, button.dataset.reviewTarget, button)));
+  } catch (error) { container.innerHTML = `<span class="subtitle">${escapeHtml(error.message)}</span>`; }
 }
 
-async function refreshSnapshot() {
-  if (!activeBridgeId) return;
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/snapshot`);
-  const body = await response.json();
-  if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Snapshot failed');
-  renderState(body.receipt);
-}
-
-function renderState(receipt) {
-  const truth = receipt.truth ?? receipt;
-  const route = truth.route;
-  const isMmf = Boolean(route);
-  document.querySelectorAll('.mmf-only').forEach(element => { element.hidden = !isMmf; });
-  elements.identity.innerHTML = [
-    ['Plugin', truth.pluginVersion], ['Character', truth.characterName || 'Unavailable'],
-    ['World', truth.currentWorld || 'Unavailable'], ['Process', truth.processId],
-  ].map(([label, value]) => `<div class="metric"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
-  if (!isMmf) {
-    const capabilities = Array.isArray(truth.capabilities) ? truth.capabilities.join(' · ') : 'snapshot only';
-    elements.routeState.innerHTML = `<strong>${escapeHtml(truth.hostKind ?? 'Bridge host')}</strong><br><span class="subtitle">Capabilities: ${escapeHtml(capabilities)} · Screenshots: ${truth.screenshotsEnabled ? 'enabled' : 'disabled'}</span>`;
-    return;
-  }
-  elements.routeState.innerHTML = `<strong>${escapeHtml(route.state)}</strong> · ${escapeHtml(route.statusMessage)}<br><span class="subtitle">Active stop: ${escapeHtml(route.activeWorld ?? 'None')} · Operation: ${escapeHtml(route.activeOperationKind ?? 'None')} / ${escapeHtml(route.activeOperationPhase ?? 'None')}</span>`;
-}
-
-function renderProof(receipt) {
-  elements.proofReceipt.innerHTML = [
-    ['Proof ID', receipt.proofId], ['Revision', receipt.revision], ['Challenge', receipt.challenge || '(none)'],
-    ['Presented', receipt.presentedInGame ? 'Yes' : 'No'], ['Proof SHA-256', receipt.proofSha256], ['Truth SHA-256', receipt.truthSha256],
-  ].map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('');
-}
-
-function renderReceipt(receipt) { renderState(receipt); if (receipt.truth) renderProof(receipt); }
-
-async function refreshControls() {
-  if (!activeBridgeId) return;
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/controls`, { cache: 'no-store' });
-  const body = await response.json();
-  if (!response.ok || !body.success) {
-    elements.controlSurface.textContent = body.message ?? body.detail ?? 'This plugin does not expose a registered control surface.';
-    return;
-  }
-  renderControls(body.receipt);
-}
-
-function renderControls(surface) {
-  const controls = Array.isArray(surface?.controls) ? surface.controls : [];
-  if (!controls.length) {
-    elements.controlSurface.className = 'privacy-note';
-    elements.controlSurface.textContent = 'No actionable controls are currently rendered. Open the plugin window, then refresh.';
-    return;
-  }
-  elements.controlSurface.className = 'control-surface';
-  elements.controlSurface.innerHTML = controls.map(control => `<button data-review-control="${escapeHtml(control.id)}" data-frame-id="${escapeHtml(surface.frameId)}" ${control.enabled ? '' : 'disabled'}>${escapeHtml(control.label)}<small>${escapeHtml(controlKind(control.kind))} · ${escapeHtml(control.value ?? (control.selected ? 'Selected' : 'Ready'))}</small></button>`).join('');
-  elements.controlSurface.querySelectorAll('[data-review-control]').forEach(button => button.addEventListener('click', () => invokeControl(button.dataset.reviewControl, Number(button.dataset.frameId))));
-}
-
-function controlKind(kind) { return ['Button', 'Toggle', 'Input', 'Select'][Number(kind)] ?? 'Control'; }
-
-async function invokeControl(controlId, frameId) {
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/controls/${encodeURIComponent(controlId)}/invoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ frameId }) });
-  const body = await response.json();
-  log(`control ${controlId}: ${body.message ?? body.detail ?? response.status}`, body.receipt);
-  if (!response.ok || !body.success) throw new Error(body.message ?? body.detail ?? 'Control action failed');
-  await new Promise(resolve => setTimeout(resolve, 100));
-  await refreshControls();
-  await refreshSnapshot();
-}
-
-async function command(commandName, payload = {}) {
-  if (!activeBridgeId) throw new Error('No active bridge instance');
-  const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/commands/${commandName}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  const body = await response.json();
-  log(`${commandName}: ${body.message ?? body.detail ?? response.status}`, body.receipt);
-  if (!response.ok || !body.success) throw new Error(body.message ?? body.detail ?? `${commandName} failed`);
-  if (body.receipt) renderReceipt(body.receipt);
-  return body;
-}
-
-document.querySelector('#refreshBridges').addEventListener('click', () => discover().catch(error => log(error.message)));
-document.querySelector('#refreshSnapshot').addEventListener('click', () => refreshSnapshot().catch(error => log(error.message)));
-document.querySelector('#refreshControls').addEventListener('click', () => refreshControls().catch(error => log(error.message)));
-elements.bridgeSelect.addEventListener('change', event => {
-  activeBridgeId = event.target.value;
-  refreshSnapshot().catch(error => log(error.message));
-  refreshReviewSurfaces().catch(error => log(error.message));
-});
-document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => command(button.dataset.command).then(refreshSnapshot).catch(error => log(error.message))));
-document.querySelector('#captureProof').addEventListener('click', async () => { const challenge = `bridge-ui-${Date.now()}`; try { await command('capture-proof', { challenge }); await new Promise(resolve => setTimeout(resolve, 500)); await command('get-proof'); } catch (error) { log(error.message); } });
-async function captureScreen(fullViewport, target = null, trigger = null) {
-  if (!activeBridgeId) return;
-  const button = trigger ?? (fullViewport ? document.querySelector('#captureContext') : document.querySelector('#captureScreen'));
+async function openReviewSurface(command, target, button) {
   button.disabled = true;
   try {
-    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport, target }) });
-    const body = await response.json();
-    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Capture failed');
-    const receipt = body.receipt;
-    activeReviewId = body.review?.id ?? '';
-    await displayReview(body.imageUrl);
-    elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
-    log(target ? `review-control ${target}: ${body.message}` : `capture-screen: ${body.message}`);
-    await refreshSnapshot();
-  } catch (error) { log(error.message); elements.captureMeta.textContent = error.message; }
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/commands/${encodeURIComponent(command)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }),
+    }));
+    log(body.message, body.receipt);
+    await Promise.all([refreshControls(), refreshSnapshot()]);
+  } catch (error) { log(error.message); }
   finally { button.disabled = false; }
 }
 
-async function captureCompositedWindow() {
+async function refreshControls() {
   if (!activeBridgeId) return;
-  const button = document.querySelector('#captureComposited');
+  try {
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/controls`, { cache: 'no-store' }));
+    const surface = body.receipt;
+    const controls = surface?.controls ?? [];
+    if (!controls.length) {
+      elements.controlSurface.className = 'privacy-note';
+      elements.controlSurface.textContent = 'No actionable controls are currently rendered. Open a declared review surface, then refresh.';
+      return;
+    }
+    elements.controlSurface.className = 'control-surface';
+    elements.controlSurface.innerHTML = controls.map(control => `<button data-review-control="${escapeHtml(control.id)}" data-frame-id="${escapeHtml(surface.frameId)}" ${control.enabled ? '' : 'disabled'}>${escapeHtml(control.label)}<small>${escapeHtml(controlKind(control.kind))} · ${escapeHtml(control.value ?? (control.selected ? 'Selected' : 'Ready'))}</small></button>`).join('');
+    elements.controlSurface.querySelectorAll('[data-review-control]').forEach(button =>
+      button.addEventListener('click', () => invokeControl(button.dataset.reviewControl, Number(button.dataset.frameId))));
+  } catch (error) { elements.controlSurface.textContent = error.message; }
+}
+
+function controlKind(kind) { return ['Button', 'Toggle', 'Input', 'Select', 'Reveal', 'Hover'][Number(kind)] ?? 'Control'; }
+
+async function invokeControl(controlId, frameId) {
+  try {
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/controls/${encodeURIComponent(controlId)}/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ frameId }),
+    }));
+    log(`${controlId}: ${body.message}`, body.receipt);
+    await Promise.all([refreshControls(), refreshSnapshot()]);
+  } catch (error) { log(error.message); }
+}
+
+async function refreshCaptureSurfaces() {
+  const button = document.querySelector('#captureUnfocused');
+  if (!activeBridgeId) { button.disabled = true; return; }
+  try {
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/capture-surfaces`, { cache: 'no-store' }));
+    const surfaces = body.receipt ?? [];
+    elements.captureSurfaceSelect.innerHTML = surfaces.map(surface => `<option value="${escapeHtml(surface.id)}" ${surface.isDefault ? 'selected' : ''}>${escapeHtml(surface.label)}</option>`).join('');
+    elements.captureSurfaceSelect.hidden = surfaces.length < 2;
+    button.disabled = surfaces.length === 0;
+  } catch (error) { button.disabled = true; elements.captureSurfaceSelect.innerHTML = ''; }
+}
+
+async function captureScreen(fullViewport, target = null, trigger = null) {
+  const button = trigger ?? (fullViewport ? document.querySelector('#captureContext') : document.querySelector('#captureScreen'));
   button.disabled = true;
   try {
-    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/composited-capture-requests`, { method: 'POST' });
-    const body = await response.json();
-    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Composited capture could not be queued');
-    elements.captureMeta.textContent = 'Waiting for the FFXIV client to become foreground…';
-    const result = await awaitCompositedCapture(body.request);
-    activeReviewId = result.review?.id ?? '';
-    await displayReview(result.imageUrl);
-    const receipt = result.receipt;
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/captures`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullViewport, target }),
+    }));
+    activeReviewId = body.review?.id ?? '';
+    await displayReview(body.imageUrl);
+    const receipt = body.receipt;
     elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · SHA-256 ${receipt.sha256}`;
-    log(`composited capture: ${body.message}`);
-  } catch (error) { log(error.message); elements.captureMeta.textContent = error.message; }
+    log(body.message, receipt);
+  } catch (error) { elements.captureMeta.textContent = error.message; log(error.message); }
   finally { button.disabled = false; }
 }
 
 async function captureUnfocusedReview() {
-  if (!activeBridgeId) return;
   const button = document.querySelector('#captureUnfocused');
   button.disabled = true;
   try {
-    elements.captureMeta.textContent = 'Preparing a frame-confirmed plugin presentation…';
     const target = elements.captureSurfaceSelect.value;
-    const query = target ? `?target=${encodeURIComponent(target)}` : '';
-    const response = await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/unfocused-review-capture-requests${query}`, { method: 'POST' });
-    const body = await response.json();
-    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Unfocused review capture could not start');
-    const result = await awaitUnfocusedCapture(body.request);
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/unfocused-review-capture-requests${target ? `?target=${encodeURIComponent(target)}` : ''}`, { method: 'POST' }));
+    const result = await awaitCapture(`/api/unfocused-review-capture-requests/${encodeURIComponent(body.request.requestId)}`, body.request);
     activeReviewId = result.review?.id ?? '';
     await displayReview(result.imageUrl);
-    const receipt = result.receipt;
-    elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${receipt.captureMethod} · frame ${receipt.frameId} · ${new Date(receipt.capturedAtUtc).toLocaleString()}`;
-    log(`unfocused review: ${result.message}`, receipt);
-    await refreshSnapshot();
-  } catch (error) { log(error.message); elements.captureMeta.textContent = error.message; }
+    elements.captureMeta.textContent = `${result.receipt.scope} · ${result.receipt.width}×${result.receipt.height} · ${result.receipt.captureMethod}`;
+    log(result.message, result.receipt);
+  } catch (error) { elements.captureMeta.textContent = error.message; log(error.message); }
   finally { button.disabled = false; }
 }
 
-async function awaitUnfocusedCapture(request) {
+async function captureCompositedWindow() {
+  const button = document.querySelector('#captureComposited');
+  button.disabled = true;
+  try {
+    const body = await readJson(await fetch(`/api/bridges/${encodeURIComponent(activeBridgeId)}/composited-capture-requests`, { method: 'POST' }));
+    const result = await awaitCapture(`/api/composited-capture-requests/${encodeURIComponent(body.request.requestId)}`, body.request);
+    activeReviewId = result.review?.id ?? '';
+    await displayReview(result.imageUrl);
+    elements.captureMeta.textContent = `${result.receipt.scope} · ${result.receipt.width}×${result.receipt.height}`;
+  } catch (error) { elements.captureMeta.textContent = error.message; log(error.message); }
+  finally { button.disabled = false; }
+}
+
+async function awaitCapture(url, request) {
   while (new Date(request.expiresAtUtc) > new Date()) {
     elements.captureMeta.textContent = request.message;
     await new Promise(resolve => setTimeout(resolve, 100));
-    const response = await fetch(`/api/unfocused-review-capture-requests/${encodeURIComponent(request.requestId)}`, { cache: 'no-store' });
-    const body = await response.json();
-    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Unfocused review capture was lost');
-    request = body.request;
-    if (request.state === 'completed') return request;
-    if (request.state === 'failed') throw new Error(request.message);
-  }
-  throw new Error('Unfocused review capture expired before completion');
-}
-
-async function awaitCompositedCapture(request) {
-  while (new Date(request.expiresAtUtc) > new Date()) {
-    await new Promise(resolve => setTimeout(resolve, 150));
-    const response = await fetch(`/api/composited-capture-requests/${encodeURIComponent(request.requestId)}`, { cache: 'no-store' });
-    const body = await response.json();
-    if (!response.ok || !body.success) throw new Error(body.detail ?? body.message ?? 'Queued composited capture was lost');
+    const body = await readJson(await fetch(url, { cache: 'no-store' }));
     request = body.request;
     if (request.state === 'completed') return request;
     if (request.state === 'failed' || request.state === 'expired') throw new Error(request.message);
   }
-  throw new Error('Composited capture request expired before FFXIV became foreground');
+  throw new Error('Capture request expired before completion.');
 }
 
 async function displayReview(imageUrl) {
-  const imageResponse = await fetch(imageUrl, { cache: 'no-store' });
-  if (!imageResponse.ok) throw new Error('Saved capture is unavailable');
-  const imageBlob = await imageResponse.blob();
+  const response = await fetch(imageUrl, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Saved capture is unavailable.');
   if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl);
-  captureObjectUrl = URL.createObjectURL(imageBlob);
+  captureObjectUrl = URL.createObjectURL(await response.blob());
   elements.captureImage.src = captureObjectUrl;
   elements.captureImage.classList.add('ready');
 }
 
 async function restoreLatestReview() {
-  const response = await fetch('/api/reviews', { cache: 'no-store' });
-  if (!response.ok) return;
-  const reviews = await response.json();
+  const reviews = await readJson(await fetch('/api/reviews', { cache: 'no-store' }));
   const latest = reviews[0];
   if (!latest) return;
   activeReviewId = latest.id;
   await displayReview(`/api/reviews/${encodeURIComponent(latest.id)}.png`);
-  const receipt = latest.receipt;
-  elements.captureMeta.textContent = `${receipt.scope} · ${receipt.width}×${receipt.height} · ${new Date(receipt.capturedAtUtc).toLocaleString()} · encrypted local review until ${new Date(latest.expiresAtUtc).toLocaleTimeString()}`;
+  elements.captureMeta.textContent = `${latest.receipt.scope} · ${latest.receipt.width}×${latest.receipt.height} · encrypted until ${new Date(latest.expiresAtUtc).toLocaleTimeString()}`;
 }
+
+document.querySelector('#refreshBridges').addEventListener('click', () => discover().catch(error => log(error.message)));
+document.querySelector('#refreshSnapshot').addEventListener('click', () => refreshSnapshot().catch(error => log(error.message)));
+document.querySelector('#refreshControls').addEventListener('click', () => refreshControls().catch(error => log(error.message)));
+elements.bridgeSelect.addEventListener('change', event => { activeBridgeId = event.target.value; discover().catch(error => log(error.message)); });
 document.querySelector('#captureScreen').addEventListener('click', () => captureScreen(false));
 document.querySelector('#captureContext').addEventListener('click', () => captureScreen(true));
 document.querySelector('#captureComposited').addEventListener('click', captureCompositedWindow);
 document.querySelector('#captureUnfocused').addEventListener('click', captureUnfocusedReview);
 document.querySelector('#clearCapture').addEventListener('click', async () => {
-  if (!activeReviewId) return;
-  const response = await fetch(`/api/reviews/${encodeURIComponent(activeReviewId)}`, { method: 'DELETE' });
-  if (!response.ok && response.status !== 404) return log('Could not clear the saved capture');
+  if (activeReviewId) await fetch(`/api/reviews/${encodeURIComponent(activeReviewId)}`, { method: 'DELETE' });
   activeReviewId = '';
   if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl);
   captureObjectUrl = '';
@@ -277,5 +269,8 @@ document.querySelector('#clearCapture').addEventListener('click', async () => {
   elements.captureMeta.textContent = 'Saved capture cleared.';
 });
 window.addEventListener('beforeunload', () => { if (captureObjectUrl) URL.revokeObjectURL(captureObjectUrl); });
+const events = new EventSource('/api/events');
+events.addEventListener('bridges', () => discover().catch(error => log(error.message)));
+events.onerror = () => { elements.connectionState.textContent = 'Reconnecting'; };
 discover().then(restoreLatestReview).catch(error => log(error.message));
-setInterval(() => { refreshSnapshot().catch(error => log(error.message)); refreshControls().catch(error => log(error.message)); }, 1500);
+setInterval(() => { if (activeBridgeId) Promise.all([refreshSnapshot(), refreshControls()]).catch(error => log(error.message)); }, 1500);

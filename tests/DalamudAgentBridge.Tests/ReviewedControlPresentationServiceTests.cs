@@ -119,6 +119,7 @@ public sealed class ReviewedControlPresentationServiceTests
     {
         Id = "MarketMafioso-1",
         PluginName = "MarketMafioso",
+        PluginInternalName = "MarketMafioso",
         PipeName = "pipe",
         ProcessId = 1,
         SchemaVersion = 1,

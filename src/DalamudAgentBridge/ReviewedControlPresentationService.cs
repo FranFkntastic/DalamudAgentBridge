@@ -142,6 +142,7 @@ public sealed class ReviewedControlPresentationService
         {
             Target = request.ControlId,
             FrameId = presentation.FrameId,
+            Arguments = request.Arguments,
         }, cancellationToken).ConfigureAwait(false);
         if (!invocation.Success)
             throw new InvalidOperationException($"Reviewed control invocation failed: {invocation.Message}");

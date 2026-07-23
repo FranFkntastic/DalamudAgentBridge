@@ -2,14 +2,6 @@ using System.Text.Json;
 
 namespace DalamudAgentBridge;
 
-public sealed record BridgeDiscovery
-{
-    public int SchemaVersion { get; init; }
-    public string PipeName { get; init; } = string.Empty;
-    public int ProcessId { get; init; }
-    public string PluginInstanceId { get; init; } = string.Empty;
-}
-
 public sealed record BridgeInstance
 {
     public required string Id { get; init; }
@@ -20,6 +12,11 @@ public sealed record BridgeInstance
     public required string PluginInstanceId { get; init; }
     public required string AccessToken { get; init; }
     public required string DiscoveryPath { get; init; }
+    public required string PluginInternalName { get; init; }
+    public string? RuntimeInstanceId { get; init; }
+    public string? ProfileId { get; init; }
+    public string? ProfileAlias { get; init; }
+    public int ProtocolVersion { get; init; } = 1;
 }
 
 public sealed record BridgeInstanceView(
@@ -28,7 +25,17 @@ public sealed record BridgeInstanceView(
     string PipeName,
     int ProcessId,
     int SchemaVersion,
-    string PluginInstanceId);
+    string PluginInstanceId,
+    string PluginInternalName,
+    string? RuntimeInstanceId,
+    string? ProfileId,
+    string? ProfileAlias,
+    int ProtocolVersion);
+
+public sealed record BridgeTargetSelector(
+    string Plugin,
+    string? Profile = null,
+    int? ProcessId = null);
 
 public sealed record BridgeCommandRequest
 {
@@ -38,6 +45,8 @@ public sealed record BridgeCommandRequest
     public string? ProofId { get; init; }
     public bool FullViewport { get; init; }
     public string? TransactionId { get; init; }
+    public JsonElement? Arguments { get; init; }
+    public string? OperationId { get; init; }
 }
 
 public sealed record BridgeCaptureReceipt
@@ -57,6 +66,12 @@ public sealed record BridgeCaptureReceipt
     public long? FrameId { get; init; }
 }
 
+public sealed record PluginCaptureReviewReceipt(
+    BridgeInstanceView Instance,
+    BridgeCaptureReceipt Receipt,
+    ReviewCapture Review,
+    string ImagePath);
+
 public sealed record PluginBridgeRequest
 {
     public required string Token { get; init; }
@@ -67,6 +82,8 @@ public sealed record PluginBridgeRequest
     public string? ProofId { get; init; }
     public bool FullViewport { get; init; }
     public string? TransactionId { get; init; }
+    public JsonElement? Arguments { get; init; }
+    public string? OperationId { get; init; }
 }
 
 public sealed record BridgeCaptureTransactionReceipt(
@@ -97,6 +114,10 @@ public sealed record ReviewedControlActionRequest
     public string SurfaceId { get; init; } = string.Empty;
     public string ControlId { get; init; } = string.Empty;
     public int? TimeoutMilliseconds { get; init; }
+    public JsonElement? Arguments { get; init; }
+    public bool WaitForCompletion { get; init; } = true;
+    public int? CompletionTimeoutMilliseconds { get; init; }
+    public BridgeWaitCondition? CompletionCondition { get; init; }
 }
 
 public sealed record ReviewedControlActionReceipt(
@@ -108,7 +129,62 @@ public sealed record PluginBridgeResponse
     public bool Success { get; init; }
     public string Message { get; init; } = string.Empty;
     public JsonElement? Receipt { get; init; }
+    public string? OperationId { get; init; }
 }
+
+public sealed record BridgeHealthReceipt(
+    BridgeInstanceView Instance,
+    bool Reachable,
+    string Message,
+    Franthropy.Dalamud.AgentBridge.AgentBridgeManifest? Manifest,
+    DateTimeOffset CheckedAtUtc);
+
+public sealed record BridgeWaitCondition(
+    string Path,
+    string? ExpectedValue = null,
+    bool? Exists = null);
+
+public sealed record BridgeWaitReceipt(
+    string BridgeId,
+    BridgeWaitCondition Condition,
+    JsonElement Snapshot,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    int Attempts);
+
+public sealed record BridgeWaitRequest(
+    BridgeWaitCondition Condition,
+    int? TimeoutMilliseconds = null);
+
+public sealed record BridgeActionWorkflowReceipt(
+    BridgeInstanceView Instance,
+    ReviewedControlActionReceipt Action,
+    Franthropy.Dalamud.AgentBridge.AgentBridgeOperationSnapshot? Operation,
+    JsonElement FinalSnapshot,
+    DalamudLogRead Logs,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc);
+
+public sealed record DevPluginDeploymentRequest
+{
+    public string SourceDirectory { get; init; } = string.Empty;
+    public string? ExpectedMainDllSha256 { get; init; }
+    public int? TimeoutMilliseconds { get; init; }
+}
+
+public sealed record DevPluginDeploymentReceipt(
+    BridgeInstanceView Before,
+    BridgeInstanceView After,
+    string SourceDirectory,
+    string TargetDirectory,
+    string PreviousMainDllSha256,
+    string InstalledMainDllSha256,
+    string LoadedMainDllSha256,
+    string PreviousRuntimeInstanceId,
+    string LoadedRuntimeInstanceId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    bool Reloaded = true);
 
 public sealed record InstalledPluginSnapshot
 {

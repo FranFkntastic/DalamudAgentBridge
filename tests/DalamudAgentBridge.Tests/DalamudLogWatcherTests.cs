@@ -65,6 +65,7 @@ public sealed class DalamudLogWatcherTests : IDisposable
         {
             Id = "DalamudAgentBridge-1",
             PluginName = "DalamudAgentBridge",
+            PluginInternalName = "DalamudAgentBridge",
             PipeName = "test",
             ProcessId = 1,
             SchemaVersion = 1,

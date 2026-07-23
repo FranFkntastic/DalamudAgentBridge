@@ -57,6 +57,7 @@ public sealed class BridgeRegistry
                 var token = ReadAccessToken(accessTokenPath, discovery.PluginInstanceId);
                 if (string.IsNullOrWhiteSpace(token))
                     continue;
+                var profile = AgentBridgeProfileIdentity.FromPluginConfigDirectory(pluginDirectory);
 
                 var id = $"{pluginName}-{discovery.ProcessId}";
                 instances[id] = new BridgeInstance
@@ -69,6 +70,11 @@ public sealed class BridgeRegistry
                     PluginInstanceId = discovery.PluginInstanceId,
                     AccessToken = token,
                     DiscoveryPath = discoveryPath,
+                    PluginInternalName = discovery.PluginInternalName ?? pluginName,
+                    RuntimeInstanceId = discovery.RuntimeInstanceId,
+                    ProfileId = discovery.ProfileId ?? profile.Id,
+                    ProfileAlias = discovery.ProfileAlias ?? profile.Alias,
+                    ProtocolVersion = discovery.ProtocolVersion,
                 };
             }
         }
@@ -79,17 +85,42 @@ public sealed class BridgeRegistry
     public BridgeInstance? Find(string id) =>
         Discover().FirstOrDefault(instance => string.Equals(instance.Id, id, StringComparison.OrdinalIgnoreCase));
 
-    private BridgeDiscovery? ReadDiscovery(string path)
+    public BridgeInstance Resolve(BridgeTargetSelector selector)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        ArgumentException.ThrowIfNullOrWhiteSpace(selector.Plugin);
+        var matches = Discover().Where(instance =>
+                (string.Equals(instance.PluginInternalName, selector.Plugin, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(instance.PluginName, selector.Plugin, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(instance.Id, selector.Plugin, StringComparison.OrdinalIgnoreCase)) &&
+                (selector.ProcessId is null || instance.ProcessId == selector.ProcessId) &&
+                (string.IsNullOrWhiteSpace(selector.Profile) ||
+                 string.Equals(instance.ProfileAlias, selector.Profile, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(instance.ProfileId, selector.Profile, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        return matches.Length switch
+        {
+            1 => matches[0],
+            0 => throw new KeyNotFoundException($"No live bridge matched plugin '{selector.Plugin}'{ProfileSuffix(selector.Profile)}."),
+            _ => throw new InvalidOperationException(
+                $"Bridge target '{selector.Plugin}' is ambiguous: {string.Join(", ", matches.Select(match => $"{match.Id} ({match.ProfileAlias ?? "unknown profile"})"))}. Supply a profile alias or process ID."),
+        };
+    }
+
+    private AgentBridgeDiscovery? ReadDiscovery(string path)
     {
         try
         {
-            return JsonSerializer.Deserialize<BridgeDiscovery>(File.ReadAllText(path), jsonOptions);
+            return JsonSerializer.Deserialize<AgentBridgeDiscovery>(File.ReadAllText(path), jsonOptions);
         }
         catch (Exception) when (File.Exists(path))
         {
             return null;
         }
     }
+
+    private static string ProfileSuffix(string? profile) =>
+        string.IsNullOrWhiteSpace(profile) ? string.Empty : $" in profile '{profile}'";
 
     private string? ReadAccessToken(string path, string pluginInstanceId)
     {

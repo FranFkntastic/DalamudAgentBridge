@@ -112,6 +112,7 @@ public sealed class LocalPluginBuildReplacementServiceTests : IDisposable
         {
             Id = "bridge-1",
             PluginName = "DalamudAgentBridge",
+            PluginInternalName = "DalamudAgentBridge",
             PipeName = "unused",
             ProcessId = 1,
             SchemaVersion = 1,
