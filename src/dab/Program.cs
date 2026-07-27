@@ -24,9 +24,18 @@ try
     var deployment = new DevPluginDeploymentService(client);
     var reviewVault = new ReviewVault(configuration);
     var capture = new PluginCaptureService(client, pipe, reviewVault);
+    var surfaceCapture = new PluginSurfaceCaptureService(client, capture);
     object result = commandLine.Command switch
     {
         "list" => client.List(),
+        "plugins" => await client.GetPluginSurfaceCatalogAsync(null, commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
+        "surfaces" => await client.GetPluginSurfaceCatalogAsync(commandLine.Plugin(), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
+        "surface-present" => await client.BeginPluginSurfacePresentationAsync(
+            commandLine.Plugin(), commandLine.Required("surface"), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
+        "surface-restore" => await client.RestorePluginSurfacePresentationAsync(
+            commandLine.Required("transaction"), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
+        "surface-capture" => await surfaceCapture.CaptureAsync(
+            commandLine.Plugin(), commandLine.Required("surface"), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
         "health" => await client.GetHealthAsync(commandLine.Target(), cancellation.Token),
         "manifest" => await client.GetManifestAsync(commandLine.Target(), cancellation.Token),
         "snapshot" => await client.GetSnapshotAsync(commandLine.Target(), cancellation.Token),
@@ -40,7 +49,7 @@ try
             commandLine.Target(),
             new ReviewedControlActionRequest
             {
-                SurfaceId = commandLine.Required("surface"),
+                SurfaceId = commandLine.Value("surface"),
                 ControlId = commandLine.Required("control"),
                 Arguments = commandLine.Json("arguments"),
                 WaitForCompletion = !commandLine.Flag("no-wait"),
@@ -56,6 +65,10 @@ try
                 ExpectedMainDllSha256 = commandLine.Value("sha256"),
                 TimeoutMilliseconds = commandLine.Int("timeout"),
             },
+            cancellation.Token),
+        "install" => await new PluginLifecycleClient(pipe).InstallAsync(
+            registry.Resolve(new BridgeTargetSelector("DalamudAgentBridge", commandLine.Profile(), commandLine.ProcessId())),
+            commandLine.Plugin(),
             cancellation.Token),
         "capture" => await capture.CaptureAsync(
             commandLine.Target(),
@@ -99,7 +112,7 @@ internal sealed class DabCommandLine
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             throw new ArgumentException(
-                "Usage: dab <list|health|manifest|snapshot|logs|wait|act|deploy|capture> [plugin] [--profile primary] [options]");
+                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|health|manifest|snapshot|logs|wait|act|deploy|install|capture> [plugin] [--profile primary] [options]");
         var options = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var positionals = new List<string>();
         for (var index = 1; index < args.Length; index++)
@@ -126,6 +139,17 @@ internal sealed class DabCommandLine
             throw new ArgumentException($"Command '{Command}' requires exactly one plugin name.");
         return new BridgeTargetSelector(positionals[0], Value("profile") ?? "primary", Int("pid"));
     }
+
+    public string Plugin()
+    {
+        if (positionals.Count != 1)
+            throw new ArgumentException($"Command '{Command}' requires exactly one plugin name.");
+        return positionals[0];
+    }
+
+    public string Profile() => Value("profile") ?? "primary";
+
+    public int? ProcessId() => Int("pid");
 
     public string Required(string name) =>
         !string.IsNullOrWhiteSpace(Value(name)) ? Value(name)! : throw new ArgumentException($"Option '--{name}' is required.");

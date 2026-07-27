@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.Chat;
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -19,10 +20,18 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ICommandManager commandManager;
     private readonly IPlayerState playerState;
     private readonly IFramework framework;
+    private readonly IClientState clientState;
+    private readonly IObjectTable objectTable;
+    private readonly IChatGui chatGui;
+    private readonly ChatLogBuffer chatLogBuffer = new();
     private readonly Configuration configuration;
     private readonly AgentBridgeViewportCaptureService viewportCapture;
     private readonly AgentBridgeHost bridgeHost;
     private readonly DalamudPluginLifecycleService pluginLifecycle;
+    private readonly DalamudPluginInstallService pluginInstall;
+    private readonly DalamudPluginDevInstallService pluginDevInstall;
+    private readonly DalamudPluginSurfaceDiscoveryService pluginSurfaceDiscovery;
+    private readonly DalamudPluginSurfacePresentationService pluginSurfacePresentation;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
@@ -37,6 +46,9 @@ public sealed class Plugin : IDalamudPlugin
         ICommandManager commandManager,
         IPlayerState playerState,
         IFramework framework,
+        IClientState clientState,
+        IObjectTable objectTable,
+        IChatGui chatGui,
         IGameGui gameGui,
         ITextureProvider textureProvider,
         ITextureReadbackProvider textureReadbackProvider)
@@ -45,6 +57,10 @@ public sealed class Plugin : IDalamudPlugin
         this.commandManager = commandManager;
         this.playerState = playerState;
         this.framework = framework;
+        this.clientState = clientState;
+        this.objectTable = objectTable;
+        this.chatGui = chatGui;
+        this.chatGui.ChatMessage += OnChatMessage;
         renderedTextActions = new(gameGui);
         lifestreamLogin = new(pluginInterface);
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -62,6 +78,10 @@ public sealed class Plugin : IDalamudPlugin
             textureProvider,
             textureReadbackProvider);
         pluginLifecycle = new DalamudPluginLifecycleService(pluginInterface, commandManager, framework);
+        pluginInstall = new DalamudPluginInstallService(pluginInterface);
+        pluginDevInstall = new DalamudPluginDevInstallService(pluginInterface);
+        pluginSurfaceDiscovery = new DalamudPluginSurfaceDiscoveryService(pluginInterface);
+        pluginSurfacePresentation = new DalamudPluginSurfacePresentationService(pluginSurfaceDiscovery, framework);
         bridgeHost = new AgentBridgeHost(
             configuration,
             pluginInterface.GetPluginConfigDirectory(),
@@ -77,11 +97,26 @@ public sealed class Plugin : IDalamudPlugin
             transactionId => captureTransactions.Complete(transactionId),
             transactionId => captureTransactions.Cancel(transactionId),
             viewportCapture.CaptureAsync,
+            (transactionId, cancellationToken) => viewportCapture.CaptureWindowAsync(
+                () => pluginSurfacePresentation.GetCaptureWindowName(transactionId),
+                "PluginSurface",
+                cancellationToken),
             () => pluginLifecycle.Snapshot(),
+            target => pluginSurfaceDiscovery.Snapshot(target),
+            pluginSurfacePresentation.Begin,
+            pluginSurfacePresentation.Restore,
             async (internalName, enabled, cancellationToken) =>
                 await pluginLifecycle.SetEnabledAsync(internalName, enabled, cancellationToken).ConfigureAwait(false),
+            async (internalName, cancellationToken) =>
+                await pluginInstall.InstallAsync(internalName, cancellationToken).ConfigureAwait(false),
+            async (internalName, cancellationToken) =>
+                await pluginDevInstall.InstallDevAsync(internalName, cancellationToken).ConfigureAwait(false),
             CreateLoginSnapshot,
-            BeginLogin);
+            BeginLogin,
+            reviewRegistry.ActionCatalog,
+            () => reviewRegistry.CatalogRevision,
+            SendChatLine,
+            chatLogBuffer.Read);
         bridgeHost.Start();
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -96,6 +131,9 @@ public sealed class Plugin : IDalamudPlugin
     {
         captureTransactions.CancelActive();
         bridgeHost.Dispose();
+        chatGui.ChatMessage -= OnChatMessage;
+        viewportCapture.Dispose();
+        pluginSurfacePresentation.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
         pluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
@@ -115,6 +153,23 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void OnCommand(string command, string arguments) => RequestWindowOpen();
+
+    private void OnChatMessage(IHandleableChatMessage message) =>
+        chatLogBuffer.Record(
+            (int)message.LogKind,
+            message.LogKind.ToString(),
+            message.Timestamp,
+            message.Sender.TextValue,
+            message.Message.TextValue);
+
+    private bool SendChatLine(string line)
+    {
+        // Command-only by policy: the bridge must never put plain text into a
+        // chat channel. Anything that is not a slash command is rejected.
+        if (string.IsNullOrWhiteSpace(line) || !line.TrimStart().StartsWith('/'))
+            return false;
+        return commandManager.ProcessCommand(line);
+    }
 
     private void OpenWindow() => RequestWindowOpen();
 
@@ -137,7 +192,11 @@ public sealed class Plugin : IDalamudPlugin
         reviewRegistry.BeginFrame();
         AgentBridgeUiReviewFrame? frame = null;
         try { DrawCore(); }
-        finally { frame = reviewRegistry.EndFrame(); }
+        finally
+        {
+            frame = reviewRegistry.EndFrame();
+            viewportCapture.RenderPendingWindowCapture();
+        }
         if (captureRegion != null && frame != null && captureTransactions.ShouldPresentInMainViewport("bridge.main-window"))
             captureTransactions.MarkRendered("bridge.main-window", frame.FrameId);
     }
@@ -194,7 +253,15 @@ public sealed class Plugin : IDalamudPlugin
             true,
             configuration.EnableScreenshots,
             configuration.EnableScreenshots ? "Enabled" : "Disabled",
-            ToggleScreenshotHandoff);
+            arguments: null,
+            surfaceId: "bridge.main-window",
+            mutating: true,
+            completionOperationKind: null,
+            _ =>
+            {
+                ToggleScreenshotHandoff();
+                return AgentBridgeUiActionResult.Ok("Screenshot handoff setting toggled.");
+            });
         ImGui.Spacing();
         ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This standalone plugin provides its own reviewed capture surface.");
         captureRegion = new AgentBridgeViewportRegion(
@@ -202,7 +269,10 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.GetWindowSize(),
             ImGui.GetMainViewport().Pos,
             ImGui.GetMainViewport().Size,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow)
+        {
+            ViewportId = ImGui.GetMainViewport().ID,
+        };
         ImGui.End();
         WindowCollapsed = false;
         WindowOpen = windowOpen;
@@ -229,8 +299,9 @@ public sealed class Plugin : IDalamudPlugin
         characterName = playerState.CharacterName ?? "Unavailable",
         currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
         bridgeWindowOpen = WindowOpen,
+        client = CreateClientSnapshot(),
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin" },
+        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "send-chat", "get-chat-log" },
         screenshotsEnabled = configuration.EnableScreenshots,
     };
 
@@ -248,6 +319,38 @@ public sealed class Plugin : IDalamudPlugin
             playerAvailable = !string.IsNullOrWhiteSpace(playerState.CharacterName),
             addons = addonNames.Select(renderedTextActions.CaptureVisibleText).ToArray(),
             provenance = "RenderedAddon",
+        };
+    }
+
+    private object CreateClientSnapshot()
+    {
+        var player = objectTable[0];
+        if (player is null)
+            return new { available = false };
+        var position = player.Position;
+        var bells = objectTable
+            .Where(o => o is not null && string.Equals(o.Name.TextValue, "Summoning Bell", StringComparison.OrdinalIgnoreCase))
+            .Select(o => new
+            {
+                entityId = o.EntityId,
+                x = o.Position.X,
+                y = o.Position.Y,
+                z = o.Position.Z,
+                distance = Vector3.Distance(position, o.Position),
+            })
+            .OrderBy(b => b.distance)
+            .ToArray();
+        return new
+        {
+            available = true,
+            characterName = playerState.CharacterName ?? "Unavailable",
+            territoryType = clientState.TerritoryType,
+            mapId = clientState.MapId,
+            x = position.X,
+            y = position.Y,
+            z = position.Z,
+            summoningBells = bells,
+            nearestBellDistance = bells.Length > 0 ? bells[0].distance : (float?)null,
         };
     }
 

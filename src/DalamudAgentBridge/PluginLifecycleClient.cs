@@ -6,6 +6,8 @@ public interface IPluginLifecycleClient
 {
     Task<InstalledPluginSnapshot> ListAsync(BridgeInstance instance, CancellationToken cancellationToken);
     Task<PluginBridgeResponse> SetEnabledAsync(BridgeInstance instance, string internalName, bool enabled, CancellationToken cancellationToken);
+    Task<PluginBridgeResponse> InstallAsync(BridgeInstance instance, string internalName, CancellationToken cancellationToken);
+    Task<PluginBridgeResponse> InstallDevAsync(BridgeInstance instance, string internalName, CancellationToken cancellationToken);
 }
 
 public sealed class PluginLifecycleClient : IPluginLifecycleClient
@@ -34,6 +36,38 @@ public sealed class PluginLifecycleClient : IPluginLifecycleClient
         var response = await bridgeClient.SendAsync(
             instance,
             enabled ? "enable-plugin" : "disable-plugin",
+            new BridgeCommandRequest { Target = internalName },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Success)
+            throw new InvalidOperationException(response.Message);
+        return response;
+    }
+
+    public async Task<PluginBridgeResponse> InstallAsync(
+        BridgeInstance instance,
+        string internalName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(internalName);
+        var response = await bridgeClient.SendAsync(
+            instance,
+            "install-plugin",
+            new BridgeCommandRequest { Target = internalName },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Success)
+            throw new InvalidOperationException(response.Message);
+        return response;
+    }
+
+    public async Task<PluginBridgeResponse> InstallDevAsync(
+        BridgeInstance instance,
+        string internalName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(internalName);
+        var response = await bridgeClient.SendAsync(
+            instance,
+            "install-dev-plugin",
             new BridgeCommandRequest { Target = internalName },
             cancellationToken).ConfigureAwait(false);
         if (!response.Success)

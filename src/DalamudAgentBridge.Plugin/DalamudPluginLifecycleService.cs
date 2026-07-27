@@ -108,7 +108,9 @@ internal sealed class DalamudPluginLifecycleService
         plugin.IsOutdated,
         plugin.IsBanned,
         plugin.IsOrphaned,
-        plugin.IsDecommissioned);
+        plugin.IsDecommissioned,
+        plugin.HasMainUi,
+        plugin.HasConfigUi);
 
     private static string EscapeArgument(string value) => value.Replace("\"", string.Empty, StringComparison.Ordinal);
 }
@@ -126,7 +128,9 @@ internal sealed record PluginLifecycleState(
     bool IsOutdated,
     bool IsBanned,
     bool IsOrphaned,
-    bool IsDecommissioned);
+    bool IsDecommissioned,
+    bool HasMainUi,
+    bool HasConfigUi);
 
 internal sealed record PluginLifecycleChangeReceipt(
     bool RequestedEnabled,

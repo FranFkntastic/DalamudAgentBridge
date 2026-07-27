@@ -13,19 +13,25 @@ public sealed class AgentBridgeTools
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly AgentBridgeClient client;
+    private readonly PluginLifecycleClient lifecycle;
     private readonly DevPluginDeploymentService deployment;
     private readonly PluginCaptureService capture;
+    private readonly PluginSurfaceCaptureService surfaceCapture;
     private readonly ReviewVault reviewVault;
 
     public AgentBridgeTools(
         AgentBridgeClient client,
+        PluginLifecycleClient lifecycle,
         DevPluginDeploymentService deployment,
         PluginCaptureService capture,
+        PluginSurfaceCaptureService surfaceCapture,
         ReviewVault reviewVault)
     {
         this.client = client;
+        this.lifecycle = lifecycle;
         this.deployment = deployment;
         this.capture = capture;
+        this.surfaceCapture = surfaceCapture;
         this.reviewVault = reviewVault;
     }
 
@@ -47,6 +53,86 @@ public sealed class AgentBridgeTools
         [Description("Optional FFXIV process id.")] int? processId = null,
         CancellationToken cancellationToken = default) =>
         Json(await client.GetManifestAsync(Target(plugin, profile, processId), cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_plugins"), Description("List installed Dalamud plugins and their public or safely discovered UI entry points through the standalone connector. Read-only.")]
+    public async Task<string> Plugins(
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id when a profile has multiple clients.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.GetPluginSurfaceCatalogAsync(null, profile, processId, cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_surfaces"), Description("List public and bounded-reflection UI surfaces for one installed plugin. This only observes serialized state; it does not open, close, focus, or invoke the plugin. Read-only.")]
+    public async Task<string> Surfaces(
+        [Description("Installed plugin internal name.")] string plugin,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.GetPluginSurfaceCatalogAsync(plugin, profile, processId, cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_surface_inspect"), Description("Refresh and inspect one discovered plugin UI surface by stable surface id. Read-only; reflected objects never leave the connector.")]
+    public async Task<string> InspectSurface(
+        [Description("Installed plugin internal name.")] string plugin,
+        [Description("Stable surface id returned by bridge_surfaces.")] string surfaceId,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var catalog = await client.GetPluginSurfaceCatalogAsync(plugin, profile, processId, cancellationToken).ConfigureAwait(false);
+        var surface = catalog.Plugins.SelectMany(value => value.Surfaces)
+            .SingleOrDefault(value => string.Equals(value.Id, surfaceId, StringComparison.Ordinal));
+        return surface is null
+            ? Json(new { success = false, message = $"Surface {surfaceId} is not present in the current runtime catalog.", catalog.CatalogRevision })
+            : Json(new { success = true, catalog.CapturedAtUtc, catalog.CatalogRevision, surface });
+    }
+
+    [McpServerTool(Name = "bridge_surface_present"), Description("Open and uncollapse one reflected plugin window under a short-lived reversible lease. Returns the exact prior state and transaction id; the connector auto-restores on expiry.")]
+    public async Task<string> PresentSurface(
+        [Description("Installed plugin internal name.")] string plugin,
+        [Description("Reversible reflected surface id returned by bridge_surfaces.")] string surfaceId,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.BeginPluginSurfacePresentationAsync(
+            plugin, surfaceId, profile, processId, cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_surface_restore"), Description("Finish a reflected surface presentation lease and restore the exact prior open, collapsed, and focus-request state.")]
+    public async Task<string> RestoreSurface(
+        [Description("Transaction id returned by bridge_surface_present.")] string transactionId,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.RestorePluginSurfacePresentationAsync(
+            transactionId, profile, processId, cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_surface_capture"), Description("Present one reflected plugin window, capture the rendered game viewport, verify and store the encrypted handoff, then restore prior window state in a finally path.")]
+    public async Task<CallToolResult> CaptureSurface(
+        [Description("Installed plugin internal name.")] string plugin,
+        [Description("Reversible reflected surface id returned by bridge_surfaces.")] string surfaceId,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var receipt = await surfaceCapture.CaptureAsync(
+            plugin, surfaceId, profile, processId, cancellationToken).ConfigureAwait(false);
+        if (!reviewVault.TryRead(receipt.Capture.Review.Id, out var pngBytes))
+            throw new InvalidOperationException("The verified surface review image could not be read from the short-lived vault.");
+        try
+        {
+            var base64Bytes = Encoding.UTF8.GetBytes(Convert.ToBase64String(pngBytes));
+            return new CallToolResult
+            {
+                Content =
+                [
+                    new TextContentBlock { Text = Json(receipt) },
+                    new ImageContentBlock { Data = base64Bytes, MimeType = "image/png" },
+                ],
+            };
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(pngBytes);
+        }
+    }
 
     [McpServerTool(Name = "bridge_snapshot"), Description("Read the plugin's current automation and UI state snapshot. Read-only and safe while the game is unfocused.")]
     public async Task<string> Snapshot(
@@ -83,8 +169,8 @@ public sealed class AgentBridgeTools
     [McpServerTool(Name = "bridge_act"), Description("Invoke one manifest-declared semantic control after the bridge renders and reviews that exact control. This cannot inject arbitrary mouse or keyboard input and cannot bypass the plugin allowlist.")]
     public async Task<string> Act(
         [Description("Plugin internal name.")] string plugin,
-        [Description("Manifest review surface id.")] string surfaceId,
-        [Description("Manifest control id to invoke.")] string controlId,
+        [Description("Manifest review surface id. Omit when the action id uniquely identifies its surface.")] string? surfaceId = null,
+        [Description("Manifest action id to invoke.")] string controlId = "",
         [Description("Optional JSON object containing typed arguments declared by the action schema.")] string? argumentsJson = null,
         [Description("Wait for the returned operation or completion condition.")] bool waitForCompletion = true,
         [Description("Maximum completion wait in milliseconds.")] int timeoutMilliseconds = 30000,
@@ -102,18 +188,29 @@ public sealed class AgentBridgeTools
                 throw new ArgumentException("argumentsJson must be a JSON object.", nameof(argumentsJson));
             arguments = document.RootElement.Clone();
         }
-        return Json(await client.ActAndObserveAsync(
-            Target(plugin, profile, processId),
-            new ReviewedControlActionRequest
-            {
-                SurfaceId = surfaceId,
-                ControlId = controlId,
-                Arguments = arguments,
-                WaitForCompletion = waitForCompletion,
-                CompletionTimeoutMilliseconds = Math.Clamp(timeoutMilliseconds, 250, 300000),
-                CompletionCondition = string.IsNullOrWhiteSpace(waitPath) ? null : new BridgeWaitCondition(waitPath, waitEquals),
-            },
-            cancellationToken).ConfigureAwait(false));
+        try
+        {
+            return Json(await client.ActAndObserveAsync(
+                Target(plugin, profile, processId),
+                new ReviewedControlActionRequest
+                {
+                    SurfaceId = surfaceId,
+                    ControlId = controlId,
+                    Arguments = arguments,
+                    WaitForCompletion = waitForCompletion,
+                    CompletionTimeoutMilliseconds = Math.Clamp(timeoutMilliseconds, 250, 300000),
+                    CompletionCondition = string.IsNullOrWhiteSpace(waitPath) ? null : new BridgeWaitCondition(waitPath, waitEquals),
+                },
+                cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Json(new { success = false, message = "The reviewed control action timed out." });
+        }
+        catch (Exception exception) when (exception is IOException or TimeoutException or InvalidOperationException)
+        {
+            return Json(new { success = false, message = exception.Message });
+        }
     }
 
     [McpServerTool(Name = "bridge_deploy"), Description("Deploy a built dev-plugin directory to the exact directory of the selected loaded plugin, wait for hot reload, and prove the loaded DLL SHA-256. Installed package directories are refused and failed deployments roll back.")]
@@ -165,6 +262,24 @@ public sealed class AgentBridgeTools
         finally
         {
             CryptographicOperations.ZeroMemory(pngBytes);
+        }
+    }
+
+    [McpServerTool(Name = "bridge_install_plugin"), Description("Install and load a plugin from the profile's configured Dalamud plugin repositories through the in-game connector. Refuses plugins that are already installed and cannot install over the bridge itself. Installs the release channel build.")]
+    public async Task<string> InstallPlugin(
+        [Description("Internal name of the plugin to install, for example MarketBoardPlugin.")] string plugin,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var instance = client.Resolve(Target("DalamudAgentBridge", profile, processId));
+            return Json(await lifecycle.InstallAsync(instance, plugin, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception exception) when (exception is IOException or TimeoutException or InvalidOperationException or KeyNotFoundException or OperationCanceledException)
+        {
+            return Json(new { success = false, message = exception.Message });
         }
     }
 

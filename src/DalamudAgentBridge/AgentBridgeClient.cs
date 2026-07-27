@@ -68,6 +68,77 @@ public sealed class AgentBridgeClient
         return receipt.Clone();
     }
 
+    public async Task<AgentBridgePluginSurfaceCatalog> GetPluginSurfaceCatalogAsync(
+        string? targetPlugin,
+        string? profile,
+        int? processId,
+        CancellationToken cancellationToken)
+    {
+        var connector = Resolve(new BridgeTargetSelector("DalamudAgentBridge", profile, processId));
+        var response = await pipe.SendAsync(
+            connector,
+            "get-plugin-surfaces",
+            string.IsNullOrWhiteSpace(targetPlugin) ? null : new BridgeCommandRequest { Target = targetPlugin },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Deserialize<AgentBridgePluginSurfaceCatalog>(JsonOptions)
+            ?? throw new InvalidDataException("The bridge returned an empty plugin surface catalog.");
+    }
+
+    public async Task<AgentBridgePluginSurfacePresentationReceipt> BeginPluginSurfacePresentationAsync(
+        string plugin,
+        string surfaceId,
+        string? profile,
+        int? processId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(plugin);
+        ArgumentException.ThrowIfNullOrWhiteSpace(surfaceId);
+        var catalog = await GetPluginSurfaceCatalogAsync(plugin, profile, processId, cancellationToken).ConfigureAwait(false);
+        var descriptor = catalog.Plugins
+            .Where(candidate => string.Equals(candidate.InternalName, plugin, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(candidate => candidate.Surfaces)
+            .SingleOrDefault(candidate => string.Equals(candidate.Id, surfaceId, StringComparison.Ordinal));
+        if (descriptor is null)
+            throw new InvalidOperationException($"Surface {surfaceId} is not present in {plugin}'s current runtime catalog.");
+        if (descriptor.Authority != AgentBridgeSurfaceAuthority.ReversiblePresentation ||
+            descriptor.Provenance != AgentBridgeSurfaceProvenance.ReflectedWindowSystem)
+            throw new InvalidOperationException($"Surface {surfaceId} is read-only and cannot be presented reversibly.");
+
+        var connector = Resolve(new BridgeTargetSelector("DalamudAgentBridge", profile, processId));
+        var response = await pipe.SendAsync(
+            connector,
+            "begin-plugin-surface-presentation",
+            new BridgeCommandRequest { Target = surfaceId },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Deserialize<AgentBridgePluginSurfacePresentationReceipt>(JsonOptions)
+            ?? throw new InvalidDataException("The bridge returned an invalid plugin surface presentation receipt.");
+    }
+
+    public async Task<AgentBridgePluginSurfacePresentationResult> RestorePluginSurfacePresentationAsync(
+        string transactionId,
+        string? profile,
+        int? processId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(transactionId);
+        var connector = Resolve(new BridgeTargetSelector("DalamudAgentBridge", profile, processId));
+        var response = await pipe.SendAsync(
+            connector,
+            "restore-plugin-surface-presentation",
+            new BridgeCommandRequest { TransactionId = transactionId },
+            cancellationToken).ConfigureAwait(false);
+        var result = response.Receipt is { } receipt
+            ? receipt.Deserialize<AgentBridgePluginSurfacePresentationResult>(JsonOptions)
+            : null;
+        if (result is not null)
+            return result;
+        return new AgentBridgePluginSurfacePresentationResult(response.Success, response.Message, transactionId);
+    }
+
     public async Task<BridgeWaitReceipt> WaitForSnapshotAsync(
         BridgeTargetSelector selector,
         BridgeWaitCondition condition,

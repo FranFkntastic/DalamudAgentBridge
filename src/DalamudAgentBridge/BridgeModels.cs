@@ -64,6 +64,7 @@ public sealed record BridgeCaptureReceipt
     public string? TargetPlugin { get; init; }
     public string? TransactionId { get; init; }
     public long? FrameId { get; init; }
+    public uint? ViewportId { get; init; }
 }
 
 public sealed record PluginCaptureReviewReceipt(
@@ -71,6 +72,11 @@ public sealed record PluginCaptureReviewReceipt(
     BridgeCaptureReceipt Receipt,
     ReviewCapture Review,
     string ImagePath);
+
+public sealed record PluginSurfaceCaptureReviewReceipt(
+    Franthropy.Dalamud.AgentBridge.AgentBridgePluginSurfacePresentationReceipt Presentation,
+    PluginCaptureReviewReceipt Capture,
+    Franthropy.Dalamud.AgentBridge.AgentBridgePluginSurfacePresentationResult Restoration);
 
 public sealed record PluginBridgeRequest
 {
@@ -111,7 +117,7 @@ public sealed record ReviewedControlPresentationReceipt(
 
 public sealed record ReviewedControlActionRequest
 {
-    public string SurfaceId { get; init; } = string.Empty;
+    public string? SurfaceId { get; init; }
     public string ControlId { get; init; } = string.Empty;
     public int? TimeoutMilliseconds { get; init; }
     public JsonElement? Arguments { get; init; }
@@ -205,6 +211,8 @@ public sealed record InstalledPluginState
     public bool IsBanned { get; init; }
     public bool IsOrphaned { get; init; }
     public bool IsDecommissioned { get; init; }
+    public bool HasMainUi { get; init; }
+    public bool HasConfigUi { get; init; }
 }
 
 public sealed record LocalPluginBuildReplacementRequest

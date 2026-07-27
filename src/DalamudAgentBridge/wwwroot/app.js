@@ -9,6 +9,7 @@ const elements = {
   captureImage: document.querySelector('#captureImage'),
   captureMeta: document.querySelector('#captureMeta'),
   captureSurfaceSelect: document.querySelector('#captureSurfaceSelect'),
+  pluginSurfaces: document.querySelector('#pluginSurfaces'),
 };
 
 let bridges = [];
@@ -38,7 +39,56 @@ async function discover() {
   elements.connectionState.textContent = activeBridgeId ? 'Authenticated' : 'No bridge found';
   elements.connectionState.classList.toggle('online', Boolean(activeBridgeId));
   if (!activeBridgeId) return;
-  await Promise.all([refreshManifest(), refreshSnapshot(), refreshReviewSurfaces(), refreshCaptureSurfaces(), refreshControls()]);
+  await Promise.all([refreshManifest(), refreshSnapshot(), refreshReviewSurfaces(), refreshCaptureSurfaces(), refreshControls(), refreshPluginSurfaces()]);
+}
+
+async function refreshPluginSurfaces() {
+  const bridge = bridges.find(value => value.id === activeBridgeId);
+  if (!bridge) return;
+  try {
+    const profile = bridge.profileAlias ?? bridge.profileId ?? 'primary';
+    const catalog = await readJson(await fetch(`/api/plugin-surfaces?profile=${encodeURIComponent(profile)}&processId=${encodeURIComponent(bridge.processId)}`, { cache: 'no-store' }));
+    const plugins = (catalog.plugins ?? []).filter(plugin => plugin.surfaces?.length);
+    if (!plugins.length) {
+      elements.pluginSurfaces.innerHTML = '<span class="subtitle">No public or safely discoverable plugin UI surfaces are currently available.</span>';
+      return;
+    }
+    elements.pluginSurfaces.innerHTML = plugins.map(plugin => {
+      const surfaces = plugin.surfaces.map(surface =>
+        `<span><small title="${escapeHtml(surface.id)}">${escapeHtml(surface.label)} · ${escapeHtml(surfaceProvenance(surface.provenance))} · ${surface.isOpen === true ? 'open' : surface.isOpen === false ? 'closed' : 'entry point'} · ${Number(surface.authority) === 1 ? 'reversible presentation' : 'read only'}</small>${Number(surface.authority) === 1 ? `<button data-surface-capture="${escapeHtml(surface.id)}" data-surface-plugin="${escapeHtml(plugin.internalName)}" class="secondary">Capture</button>` : ''}</span>`).join('');
+      return `<div class="action-row"><div><strong>${escapeHtml(plugin.name)}</strong><small>${escapeHtml(plugin.internalName)} · ${escapeHtml(plugin.version)} · ${plugin.isLoaded ? 'loaded' : 'unloaded'}</small>${surfaces}</div></div>`;
+    }).join('');
+    elements.pluginSurfaces.querySelectorAll('[data-surface-capture]').forEach(button =>
+      button.addEventListener('click', () => captureDiscoveredSurface(button.dataset.surfacePlugin, button.dataset.surfaceCapture, button)));
+  } catch (error) {
+    elements.pluginSurfaces.innerHTML = `<span class="subtitle">${escapeHtml(error.message)}</span>`;
+  }
+}
+
+async function captureDiscoveredSurface(plugin, surfaceId, button) {
+  const bridge = bridges.find(value => value.id === activeBridgeId);
+  if (!bridge) return;
+  button.disabled = true;
+  try {
+    const profile = bridge.profileAlias ?? bridge.profileId ?? 'primary';
+    const response = await fetch(`/api/plugin-surfaces/${encodeURIComponent(surfaceId)}/captures?plugin=${encodeURIComponent(plugin)}&profile=${encodeURIComponent(profile)}&processId=${encodeURIComponent(bridge.processId)}`, { method: 'POST' });
+    const body = await readJson(response);
+    activeReviewId = body.receipt?.capture?.review?.id ?? '';
+    await displayReview(body.imageUrl);
+    const capture = body.receipt.capture.receipt;
+    elements.captureMeta.textContent = `${plugin} · ${capture.width}×${capture.height} · presented, captured, restored`;
+    log(body.message, body.receipt);
+    await refreshPluginSurfaces();
+  } catch (error) {
+    elements.captureMeta.textContent = error.message;
+    log(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function surfaceProvenance(value) {
+  return ['plugin declared', 'reviewed control', 'Dalamud public API', 'reflected window system'][Number(value)] ?? value;
 }
 
 async function refreshManifest() {
@@ -254,6 +304,7 @@ async function restoreLatestReview() {
 document.querySelector('#refreshBridges').addEventListener('click', () => discover().catch(error => log(error.message)));
 document.querySelector('#refreshSnapshot').addEventListener('click', () => refreshSnapshot().catch(error => log(error.message)));
 document.querySelector('#refreshControls').addEventListener('click', () => refreshControls().catch(error => log(error.message)));
+document.querySelector('#refreshPluginSurfaces').addEventListener('click', () => refreshPluginSurfaces().catch(error => log(error.message)));
 elements.bridgeSelect.addEventListener('change', event => { activeBridgeId = event.target.value; discover().catch(error => log(error.message)); });
 document.querySelector('#captureScreen').addEventListener('click', () => captureScreen(false));
 document.querySelector('#captureContext').addEventListener('click', () => captureScreen(true));
