@@ -64,6 +64,8 @@ The standalone connector manages installed plugins without automating the Plugin
 
 The local-build request accepts `sourceDirectory`, optional `expectedCurrentVersion` and `expectedMainDllSha256` guards, `enableAfterReplacement`, and `preserveInstalledManifest` (default `true`). Preserving the installed manifest keeps a hotfix build attached to the package version Dalamud already resolved. It replaces an already installed plugin only; installing a previously unknown repository plugin remains outside this control surface.
 
+Dev-plugin bootstrap is a separate, narrower surface: `POST /api/bridges/{bridgeId}/plugins/{internalName}/install-dev` (or `install-dev-plugin` on the named pipe) registers a plugin that already exists on disk under the target profile's own `devPlugins` directory. The caller supplies an internal name only; the bridge resolves the assembly beneath that root, verifies the manifest matches the requested name, registers Dalamud's supported watched-location entry, scans, loads, and verifies the resulting state. Arbitrary paths and repository installs remain outside this surface.
+
 For repeated development, `tools\Test-Bridge.ps1` reuses a successful test result only while the source and test-assembly hashes remain unchanged. `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
 
 ## Protocol convention

@@ -1,10 +1,11 @@
 [CmdletBinding()]
 param(
     [ValidateSet(
-        'hello', 'get-snapshot', 'get-login-ui', 'begin-login',
+        'hello', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'begin-login',
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',
-        'open-main-window', 'close-main-window', 'select-main-tab')]
+        'open-main-window', 'close-main-window', 'select-main-tab',
+        'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin', 'send-chat')]
     [string]$Command = 'hello',
     [string]$Target,
     [long]$FrameId,

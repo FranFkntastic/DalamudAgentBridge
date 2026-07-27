@@ -160,5 +160,11 @@ public sealed class LocalPluginBuildReplacementServiceTests : IDisposable
             state = state with { IsLoaded = enabled };
             return Task.FromResult(new PluginBridgeResponse { Success = true, Message = "Changed" });
         }
+
+        public Task<PluginBridgeResponse> InstallAsync(BridgeInstance instance, string internalName, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Install is not supported by the test fake.");
+
+        public Task<PluginBridgeResponse> InstallDevAsync(BridgeInstance instance, string internalName, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Dev install is not supported by the test fake.");
     }
 }

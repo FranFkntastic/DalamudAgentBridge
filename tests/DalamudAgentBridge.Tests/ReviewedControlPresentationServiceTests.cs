@@ -81,6 +81,42 @@ public sealed class ReviewedControlPresentationServiceTests
     }
 
     [Fact]
+    public async Task PresentAndInvokeAsync_FallsBackToLegacyReviewControlCommand()
+    {
+        var commands = new List<string>();
+        var service = new ReviewedControlPresentationService((_, command, request, _) =>
+        {
+            commands.Add(command);
+            object? receipt = command switch
+            {
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "open-main-window", "squire", 1) },
+                "review-control" => new AgentBridgeUiControlReview(
+                    42,
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow.AddSeconds(3),
+                    new AgentBridgeUiControl(request!.Target!, "Evaluate", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, null)),
+                _ => null,
+            };
+            return Task.FromResult(new PluginBridgeResponse
+            {
+                Success = command != "get-control",
+                Message = command == "get-control" ? "Bridge command is not allowed." : "ok",
+                Receipt = receipt == null ? null : JsonSerializer.SerializeToElement(receipt),
+            });
+        });
+
+        var receipt = await service.PresentAndInvokeAsync(CreateInstance(), new ReviewedControlActionRequest
+        {
+            SurfaceId = "squire",
+            ControlId = "squire.refresh",
+        }, CancellationToken.None);
+
+        Assert.True(receipt.Invocation.Success);
+        Assert.Contains("get-control", commands);
+        Assert.Contains("review-control", commands);
+    }
+
+    [Fact]
     public async Task PresentAsync_ReusesCurrentSurfaceAndCachedCatalogForRepeatedReview()
     {
         var commands = new List<string>();
@@ -114,6 +150,134 @@ public sealed class ReviewedControlPresentationServiceTests
         Assert.Equal(1, commands.Count(command => command == "open-main-window"));
         Assert.Equal(1, commands.Count(command => command == "select-main-tab"));
     }
+
+    [Fact]
+    public async Task PresentAsync_ExplainsWhenAnExpiredFrameSuggestsACollapsedWindow()
+    {
+        var renderedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var service = new ReviewedControlPresentationService((_, command, request, _) =>
+        {
+            object? receipt = command switch
+            {
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "open-main-window", "squire", 1) },
+                "get-control" => new AgentBridgeUiControlReview(
+                    7,
+                    renderedAt,
+                    renderedAt.AddSeconds(3),
+                    new AgentBridgeUiControl(request!.Target!, "Evaluate", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, null)),
+                _ => null,
+            };
+            return Task.FromResult(new PluginBridgeResponse
+            {
+                Success = true,
+                Message = "ok",
+                Receipt = receipt == null ? null : JsonSerializer.SerializeToElement(receipt),
+            });
+        });
+
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() => service.PresentAsync(
+            CreateInstance(),
+            new ReviewedControlPresentationRequest
+            {
+                SurfaceId = "squire",
+                ControlIds = ["squire.refresh"],
+                TimeoutMilliseconds = 250,
+            },
+            CancellationToken.None));
+
+        Assert.Contains("frame 7", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("likely collapsed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PresentAsync_InvalidatesSurfaceCacheWhenCatalogRevisionChanges()
+    {
+        var revision = 1L;
+        var service = new ReviewedControlPresentationService((_, command, request, _) =>
+        {
+            object? receipt = command switch
+            {
+                "get-manifest" => CreateManifest(revision, revision == 1 ? "first" : "second"),
+                "get-control" => new AgentBridgeUiControlReview(
+                    revision, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(3),
+                    new AgentBridgeUiControl(request!.Target!, "Control", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, "Ready")),
+                _ => null,
+            };
+            return Task.FromResult(new PluginBridgeResponse
+            {
+                Success = receipt is not null,
+                Message = "ok",
+                Receipt = receipt is null ? null : JsonSerializer.SerializeToElement(receipt),
+            });
+        });
+
+        var first = await service.PresentAsync(CreateInstance(), new ReviewedControlPresentationRequest
+        {
+            SurfaceId = "first",
+            ControlIds = ["action"],
+        }, CancellationToken.None);
+        revision = 2;
+        var second = await service.PresentAsync(CreateInstance(), new ReviewedControlPresentationRequest
+        {
+            SurfaceId = "second",
+            ControlIds = ["action"],
+        }, CancellationToken.None);
+
+        Assert.Equal("first", first.SurfaceId);
+        Assert.Equal("second", second.SurfaceId);
+    }
+
+    [Fact]
+    public async Task PresentAndInvokeAsync_ResolvesUniqueActionSurfaceFromManifest()
+    {
+        var service = new ReviewedControlPresentationService((_, command, request, _) =>
+        {
+            object? receipt = command switch
+            {
+                "get-manifest" => CreateManifest(7, "squire", "squire.refresh"),
+                "get-control" => new AgentBridgeUiControlReview(
+                    42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(3),
+                    new AgentBridgeUiControl(request!.Target!, "Refresh", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, "Ready")),
+                _ => null,
+            };
+            return Task.FromResult(new PluginBridgeResponse
+            {
+                Success = command == "invoke-control" || receipt is not null,
+                Message = "ok",
+                Receipt = receipt is null ? null : JsonSerializer.SerializeToElement(receipt),
+            });
+        });
+
+        var result = await service.PresentAndInvokeAsync(CreateInstance(), new ReviewedControlActionRequest
+        {
+            ControlId = "squire.refresh",
+        }, CancellationToken.None);
+
+        Assert.Equal("squire", result.Presentation.SurfaceId);
+        Assert.True(result.Invocation.Success);
+    }
+
+    private static AgentBridgeManifest CreateManifest(long revision, string surfaceId, string? actionId = null) => new(
+        2,
+        new AgentBridgeRuntimeIdentity(
+            "Test",
+            "1.0.0.0",
+            "1.0.0",
+            "Test",
+            null,
+            "ABC",
+            "test.dll",
+            1,
+            "runtime",
+            DateTimeOffset.UtcNow),
+        "profile",
+        "primary",
+        "test.snapshot.v1",
+        [],
+        [new AgentBridgeReviewSurfaceDescriptor(surfaceId, surfaceId, "present-surface", surfaceId, 1)],
+        [],
+        actionId is null ? [] : [new AgentBridgeActionDescriptor(actionId, actionId, surfaceId, AgentBridgeUiControlKind.Button, true)],
+        revision);
 
     private static BridgeInstance CreateInstance() => new()
     {

@@ -12,9 +12,11 @@ builder.Services.AddSingleton<NamedPipeBridgeClient>();
 builder.Services.AddSingleton<ReviewedControlPresentationService>();
 builder.Services.AddSingleton<DalamudLogWatcher>();
 builder.Services.AddSingleton<AgentBridgeClient>();
+builder.Services.AddSingleton<PluginLifecycleClient>();
 builder.Services.AddSingleton<DevPluginDeploymentService>();
 builder.Services.AddSingleton<ReviewVault>();
 builder.Services.AddSingleton<PluginCaptureService>();
+builder.Services.AddSingleton<PluginSurfaceCaptureService>();
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()
     .WithTools<AgentBridgeTools>();

@@ -49,10 +49,13 @@ public sealed class PluginCaptureService
                     throw new InvalidDataException("Bridge returned an expired capture presentation receipt.");
             }
 
-            var response = await pipe.SendAsync(instance, "capture-screen", new BridgeCommandRequest
+            var captureCommand = transaction is null && !string.IsNullOrWhiteSpace(request?.TransactionId)
+                ? "capture-plugin-surface"
+                : "capture-screen";
+            var response = await pipe.SendAsync(instance, captureCommand, new BridgeCommandRequest
             {
                 FullViewport = request?.FullViewport ?? false,
-                TransactionId = transaction?.TransactionId,
+                TransactionId = transaction?.TransactionId ?? request?.TransactionId,
             }, cancellationToken).ConfigureAwait(false);
             if (!response.Success || response.Receipt is not { } receiptElement)
                 throw new InvalidOperationException(response.Message);

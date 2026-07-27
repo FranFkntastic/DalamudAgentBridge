@@ -28,6 +28,7 @@ builder.Services.AddSingleton<LocalPluginBuildReplacementService>();
 builder.Services.AddSingleton<AgentBridgeClient>();
 builder.Services.AddSingleton<DevPluginDeploymentService>();
 builder.Services.AddSingleton<PluginCaptureService>();
+builder.Services.AddSingleton<PluginSurfaceCaptureService>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -78,8 +79,11 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-proof",
     "capture-proof",
     "open-main-window",
+    "present-surface",
     "close-main-window",
     "open-acquisition-diagnostics",
+    "begin-login",
+    "get-login-ui",
     "select-main-tab",
     "capture-input-state",
     "stop-route",
@@ -90,11 +94,96 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-control",
     "invoke-control",
     "list-plugins",
-    "enable-plugin",
-    "disable-plugin",
+    "get-plugin-surfaces",
+    "begin-plugin-surface-presentation",
+    "restore-plugin-surface-presentation",
+    "capture-plugin-surface",
+"enable-plugin",
+"disable-plugin",
+"install-plugin",
+"install-dev-plugin",
 };
 
 app.MapGet("/api/bridges", (AgentBridgeClient client) => client.List());
+
+app.MapGet("/api/plugin-surfaces", async (
+    string? plugin,
+    string? profile,
+    int? processId,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await client.GetPluginSurfaceCatalogAsync(
+            plugin,
+            string.IsNullOrWhiteSpace(profile) ? "primary" : profile,
+            processId,
+            cancellationToken).ConfigureAwait(false));
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or InvalidDataException)
+    {
+        return Results.Problem($"Plugin surface discovery failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/plugin-surfaces/{surfaceId}/presentations", async (
+    string surfaceId,
+    string plugin,
+    string? profile,
+    int? processId,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await client.BeginPluginSurfacePresentationAsync(
+            plugin, surfaceId, profile ?? "primary", processId, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(new { success = true, message = "Surface presented under a short-lived reversible lease.", receipt });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or InvalidDataException)
+    {
+        return Results.Problem($"Plugin surface presentation failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapDelete("/api/plugin-surface-presentations/{transactionId}", async (
+    string transactionId,
+    string? profile,
+    int? processId,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var result = await client.RestorePluginSurfacePresentationAsync(
+        transactionId, profile ?? "primary", processId, cancellationToken).ConfigureAwait(false);
+    return result.Success ? Results.Ok(result) : Results.Problem(result.Message, statusCode: StatusCodes.Status409Conflict);
+});
+
+app.MapPost("/api/plugin-surfaces/{surfaceId}/captures", async (
+    string surfaceId,
+    string plugin,
+    string? profile,
+    int? processId,
+    PluginSurfaceCaptureService capture,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await capture.CaptureAsync(
+            plugin, surfaceId, profile ?? "primary", processId, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(new
+        {
+            success = true,
+            message = "Surface presented, captured, and restored.",
+            receipt,
+            imageUrl = receipt.Capture.ImagePath,
+        });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or InvalidDataException)
+    {
+        return Results.Problem($"Plugin surface capture failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
 
 app.MapGet("/api/targets/{profile}/{plugin}/health", async (
     string profile,
@@ -333,6 +422,46 @@ app.MapPost("/api/bridges/{id}/plugins/{internalName}/disable", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
     {
         return Results.Problem($"Plugin disable failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/plugins/{internalName}/install", async (
+    string id,
+    string internalName,
+    BridgeRegistry registry,
+    PluginLifecycleClient lifecycleClient,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        return Results.Ok(await lifecycleClient.InstallAsync(instance, internalName, cancellationToken));
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException or KeyNotFoundException)
+    {
+        return Results.Problem($"Plugin install failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/plugins/{internalName}/install-dev", async (
+    string id,
+    string internalName,
+    BridgeRegistry registry,
+    PluginLifecycleClient lifecycleClient,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        return Results.Ok(await lifecycleClient.InstallDevAsync(instance, internalName, cancellationToken));
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException or KeyNotFoundException)
+    {
+        return Results.Problem($"Dev plugin install failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 

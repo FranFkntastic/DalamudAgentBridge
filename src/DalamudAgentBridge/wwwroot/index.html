@@ -51,6 +51,14 @@
 
       <article class="panel span-2">
         <div class="panel-title">
+          <div><p class="eyebrow">READ-ONLY DISCOVERY</p><h2>Installed plugin UI surfaces</h2></div>
+          <button id="refreshPluginSurfaces" class="secondary">Refresh surfaces</button>
+        </div>
+        <div id="pluginSurfaces" class="action-list"><span class="subtitle">Waiting for the standalone connector.</span></div>
+      </article>
+
+      <article class="panel span-2">
+        <div class="panel-title">
           <div><p class="eyebrow">RENDERED VIEW</p><h2>Actual in-game viewport</h2></div>
           <div class="capture-actions"><select id="captureSurfaceSelect" aria-label="Plugin capture surface"></select><button id="captureUnfocused">Capture unfocused review</button><button id="captureScreen" class="secondary">Capture plugin window</button><button id="captureContext" class="secondary">Capture native viewport</button><button id="captureComposited" class="secondary">Capture composited game window</button><button id="clearCapture" class="secondary">Clear saved capture</button></div>
         </div>
