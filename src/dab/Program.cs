@@ -40,6 +40,7 @@ try
         "manifest" => await client.GetManifestAsync(commandLine.Target(), cancellation.Token),
         "snapshot" => await client.GetSnapshotAsync(commandLine.Target(), cancellation.Token),
         "logs" => client.ReadLogs(commandLine.Target(), commandLine.Long("cursor"), commandLine.Int("limit")),
+        "chat" => await client.ReadChatLogAsync(commandLine.Target(), commandLine.Long("cursor"), commandLine.Int("limit"), cancellation.Token),
         "wait" => await client.WaitForSnapshotAsync(
             commandLine.Target(),
             commandLine.Condition("path", "equals"),
@@ -112,7 +113,7 @@ internal sealed class DabCommandLine
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             throw new ArgumentException(
-                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|health|manifest|snapshot|logs|wait|act|deploy|install|capture> [plugin] [--profile primary] [options]");
+                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|health|manifest|snapshot|logs|chat|wait|act|deploy|install|capture> [plugin] [--profile primary] [options]");
         var options = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var positionals = new List<string>();
         for (var index = 1; index < args.Length; index++)

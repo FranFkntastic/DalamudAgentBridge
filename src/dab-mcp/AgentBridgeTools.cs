@@ -166,6 +166,16 @@ public sealed class AgentBridgeTools
         [Description("Optional FFXIV process id.")] int? processId = null) =>
         Json(client.ReadLogs(Target(plugin, profile, processId), cursor, limit));
 
+    [McpServerTool(Name = "bridge_chat_log"), Description("Read in-game chat log lines observed by the connector since it loaded, including other plugins' chat output. Use the returned nextCursor on the next call. Read-only.")]
+    public async Task<string> ChatLog(
+        [Description("Plugin internal name.")] string plugin,
+        [Description("Exclusive cursor returned by a previous call. Omit for the newest chat window.")] long? cursor = null,
+        [Description("Maximum number of lines, capped by the bridge.")] int? limit = null,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.ReadChatLogAsync(Target(plugin, profile, processId), cursor, limit, cancellationToken).ConfigureAwait(false));
+
     [McpServerTool(Name = "bridge_act"), Description("Invoke one manifest-declared semantic control after the bridge renders and reviews that exact control. This cannot inject arbitrary mouse or keyboard input and cannot bypass the plugin allowlist.")]
     public async Task<string> Act(
         [Description("Plugin internal name.")] string plugin,

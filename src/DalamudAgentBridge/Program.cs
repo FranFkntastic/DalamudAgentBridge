@@ -98,10 +98,10 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "begin-plugin-surface-presentation",
     "restore-plugin-surface-presentation",
     "capture-plugin-surface",
-"enable-plugin",
-"disable-plugin",
-"install-plugin",
-"install-dev-plugin",
+    "enable-plugin",
+    "disable-plugin",
+    "install-plugin",
+    "install-dev-plugin",
 };
 
 app.MapGet("/api/bridges", (AgentBridgeClient client) => client.List());
@@ -231,6 +231,25 @@ app.MapGet("/api/targets/{profile}/{plugin}/logs", (
         return Results.Ok(new { success = true, receipt = client.ReadLogs(new BridgeTargetSelector(plugin, profile), cursor, limit) });
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or KeyNotFoundException or InvalidOperationException)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/targets/{profile}/{plugin}/chat", async (
+    string profile,
+    string plugin,
+    long? cursor,
+    int? limit,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await client.ReadChatLogAsync(new BridgeTargetSelector(plugin, profile), cursor, limit, cancellationToken);
+        return Results.Ok(new { success = true, receipt });
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or KeyNotFoundException or InvalidOperationException or InvalidDataException)
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
     }

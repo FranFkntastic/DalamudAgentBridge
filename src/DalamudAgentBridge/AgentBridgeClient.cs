@@ -197,6 +197,23 @@ public sealed class AgentBridgeClient
     public DalamudLogRead ReadLogs(BridgeTargetSelector selector, long? cursor = null, int? limit = null) =>
         logs.Read(Resolve(selector), cursor, limit);
 
+    public async Task<ChatLogRead> ReadChatLogAsync(BridgeTargetSelector selector, long? cursor, int? limit, CancellationToken cancellationToken)
+    {
+        var instance = Resolve(selector);
+        JsonElement? arguments = null;
+        if (cursor is not null || limit is not null)
+            arguments = JsonSerializer.SerializeToElement(new { cursor, limit }, JsonOptions);
+        var response = await pipe.SendAsync(
+            instance,
+            "get-chat-log",
+            arguments is null ? null : new BridgeCommandRequest { Arguments = arguments },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Deserialize<ChatLogRead>(JsonOptions)
+            ?? throw new InvalidDataException("The bridge returned an empty chat log read.");
+    }
+
     private async Task<AgentBridgeOperationSnapshot> WaitForOperationAsync(
         BridgeInstance instance,
         string operationId,

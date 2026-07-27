@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using SharedAgentBridgeHost = Franthropy.Dalamud.AgentBridge.AgentBridgeHost;
@@ -36,6 +37,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<object> createLoginSnapshot;
     private readonly Func<string, LifestreamLoginSubmissionResult> beginLogin;
     private readonly Func<string, bool> sendChatLine;
+    private readonly Func<long?, int?, ChatLogRead> readChatLog;
     private readonly AgentBridgeCommandRouter router = new();
     private readonly AgentBridgeSurfaceRegistry surfaceRegistry = new();
     private readonly SharedAgentBridgeHost host;
@@ -71,7 +73,8 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, LifestreamLoginSubmissionResult> beginLogin,
         Func<IReadOnlyList<AgentBridgeActionDescriptor>> getActionCatalog,
         Func<long> getActionCatalogRevision,
-        Func<string, bool> sendChatLine)
+        Func<string, bool> sendChatLine,
+        Func<long?, int?, ChatLogRead> readChatLog)
     {
         this.configuration = configuration;
         this.dispatchOnFramework = dispatchOnFramework;
@@ -98,6 +101,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.getActionCatalog = getActionCatalog;
         this.getActionCatalogRevision = getActionCatalogRevision;
         this.sendChatLine = sendChatLine;
+        this.readChatLog = readChatLog;
         profile = AgentBridgeProfileIdentity.FromPluginConfigDirectory(configDirectory);
         runtimeIdentity = AgentBridgeRuntimeIdentity.FromAssembly("DalamudAgentBridge", Assembly.GetExecutingAssembly(), mainDllPath);
         surfaceRegistry.Register(
@@ -127,7 +131,7 @@ public sealed class AgentBridgeHost : IDisposable
             "DalamudAgentBridge.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
-                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat"),
+                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat"), new("chat-log"),
             ],
             surfaceRegistry.Snapshot(),
             getCaptureSurfaces(),
@@ -151,7 +155,7 @@ public sealed class AgentBridgeHost : IDisposable
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
             "cancel-capture-presentation", "capture-screen",
             "capture-plugin-surface",
-            "send-chat",
+            "send-chat", "get-chat-log",
         ];
         foreach (var command in commands)
             router.Register(command, HandleProductRequestAsync);
@@ -296,6 +300,9 @@ public sealed class AgentBridgeHost : IDisposable
                 if (!chatLine.StartsWith('/')) return AgentBridgeResponse.Fail("send-chat only accepts slash commands; plain chat text is never sent.");
                 var handled = await OnFrameworkAsync(() => sendChatLine(chatLine)).ConfigureAwait(false);
                 return AgentBridgeResponse.Ok("Chat line submitted.", new { line = chatLine, handledByPluginCommand = handled });
+            case "get-chat-log":
+                var (cursor, limit) = ParseChatLogQuery(request.Arguments);
+                return AgentBridgeResponse.Ok("Chat log entries captured.", readChatLog(cursor, limit));
             default:
                 return AgentBridgeResponse.Fail("Bridge command is not allowed.");
         }
@@ -318,6 +325,19 @@ public sealed class AgentBridgeHost : IDisposable
                 await dispatchOnFramework(() => cancelCapturePresentation(handle.TransactionId)).ConfigureAwait(false);
             return AgentBridgeResponse.Fail($"Capture presentation failed: {exception.Message}");
         }
+    }
+
+    private static (long? Cursor, int? Limit) ParseChatLogQuery(JsonElement? arguments)
+    {
+        if (arguments is not { ValueKind: JsonValueKind.Object } query)
+            return (null, null);
+        long? cursor = query.TryGetProperty("cursor", out var cursorValue) && cursorValue.ValueKind == JsonValueKind.Number && cursorValue.TryGetInt64(out var parsedCursor)
+            ? parsedCursor
+            : null;
+        int? limit = query.TryGetProperty("limit", out var limitValue) && limitValue.ValueKind == JsonValueKind.Number && limitValue.TryGetInt32(out var parsedLimit)
+            ? parsedLimit
+            : null;
+        return (cursor, limit);
     }
 
     private async Task<T> OnFrameworkAsync<T>(Func<T> action)
