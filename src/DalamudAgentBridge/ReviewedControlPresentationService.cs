@@ -94,6 +94,8 @@ public sealed class ReviewedControlPresentationService
             if (manifest is not null)
             {
                 var manifestKey = $"{RuntimeCachePrefix(instance)}\n{manifest.CatalogRevision}";
+                foreach (var staleKey in surfacesByCatalog.Keys.Where(candidate => candidate.StartsWith(RuntimeCachePrefix(instance), StringComparison.Ordinal) && candidate != manifestKey))
+                    surfacesByCatalog.TryRemove(staleKey, out _);
                 return surfacesByCatalog.GetOrAdd(manifestKey, _ => manifest.ReviewSurfaces.ToArray());
             }
         }

@@ -67,6 +67,13 @@ public sealed class PluginSurfaceCaptureService
         return new PluginSurfaceCaptureReviewReceipt(presentation, captured, restoration);
     }
 
+    // Transient capture-readiness markers. These must stay in sync with the
+    // in-game capture failure messages in DalamudAgentBridge.Plugin's
+    // AgentBridgeViewportCaptureService (bounds lease, zero-size, freshness,
+    // viewport readback readiness). Retry applies only while the presented
+    // surface settles; genuine failures surface after the deadline.
+    private static readonly string[] TransientCaptureMarkers = ["capture bounds", "capture viewport"];
+
     private async Task<PluginCaptureReviewReceipt> CapturePresentedSurfaceAsync(
         BridgeTargetSelector connector,
         string transactionId,
@@ -83,8 +90,7 @@ public sealed class PluginSurfaceCaptureService
                     cancellationToken).ConfigureAwait(false);
             }
             catch (InvalidOperationException exception) when (
-                (exception.Message.Contains("capture bounds", StringComparison.OrdinalIgnoreCase) ||
-                 exception.Message.Contains("capture viewport", StringComparison.OrdinalIgnoreCase)) &&
+                TransientCaptureMarkers.Any(marker => exception.Message.Contains(marker, StringComparison.OrdinalIgnoreCase)) &&
                 DateTimeOffset.UtcNow < deadline)
             {
                 await Task.Delay(50, cancellationToken).ConfigureAwait(false);

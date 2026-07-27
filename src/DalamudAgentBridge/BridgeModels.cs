@@ -162,6 +162,21 @@ public sealed record BridgeWaitRequest(
     BridgeWaitCondition Condition,
     int? TimeoutMilliseconds = null);
 
+public sealed record ChatLogEntry(
+    long Sequence,
+    DateTimeOffset ObservedAtUtc,
+    int TypeId,
+    string TypeName,
+    int Timestamp,
+    string Sender,
+    string Message);
+
+public sealed record ChatLogRead(
+    long FromCursor,
+    long NextCursor,
+    bool Reset,
+    IReadOnlyList<ChatLogEntry> Entries);
+
 public sealed record BridgeActionWorkflowReceipt(
     BridgeInstanceView Instance,
     ReviewedControlActionReceipt Action,
