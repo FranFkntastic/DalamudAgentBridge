@@ -5,7 +5,8 @@ param(
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',
         'open-main-window', 'close-main-window', 'select-main-tab',
-        'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin', 'send-chat')]
+        'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin',
+        'send-chat', 'get-chat-log')]
     [string]$Command = 'hello',
     [string]$Target,
     [long]$FrameId,

@@ -36,7 +36,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, CancellationToken, Task<object>> installDevPlugin;
     private readonly Func<object> createLoginSnapshot;
     private readonly Func<string, LifestreamLoginSubmissionResult> beginLogin;
-    private readonly Func<string, bool> sendChatLine;
+    private readonly Func<string, SlashCommandSubmission> sendChatLine;
     private readonly Func<long?, int?, ChatLogRead> readChatLog;
     private readonly AgentBridgeCommandRouter router = new();
     private readonly AgentBridgeSurfaceRegistry surfaceRegistry = new();
@@ -73,7 +73,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, LifestreamLoginSubmissionResult> beginLogin,
         Func<IReadOnlyList<AgentBridgeActionDescriptor>> getActionCatalog,
         Func<long> getActionCatalogRevision,
-        Func<string, bool> sendChatLine,
+        Func<string, SlashCommandSubmission> sendChatLine,
         Func<long?, int?, ChatLogRead> readChatLog)
     {
         this.configuration = configuration;
@@ -131,7 +131,7 @@ public sealed class AgentBridgeHost : IDisposable
             "DalamudAgentBridge.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
-                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat"), new("chat-log"),
+                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat", 2), new("chat-log"),
             ],
             surfaceRegistry.Snapshot(),
             getCaptureSurfaces(),
@@ -298,8 +298,16 @@ public sealed class AgentBridgeHost : IDisposable
                 var chatLine = request.Target.Trim();
                 if (chatLine.IndexOfAny(['\r', '\n']) >= 0) return AgentBridgeResponse.Fail("A chat line must be a single line.");
                 if (!chatLine.StartsWith('/')) return AgentBridgeResponse.Fail("send-chat only accepts slash commands; plain chat text is never sent.");
-                var handled = await OnFrameworkAsync(() => sendChatLine(chatLine)).ConfigureAwait(false);
-                return AgentBridgeResponse.Ok("Chat line submitted.", new { line = chatLine, handledByPluginCommand = handled });
+                var submission = await OnFrameworkAsync(() => sendChatLine(chatLine)).ConfigureAwait(false);
+                return submission.Submitted
+                    ? AgentBridgeResponse.Ok("Slash command submitted.", new
+                    {
+                        line = chatLine,
+                        route = submission.Route,
+                        submission.HandledByPluginCommand,
+                        submission.ForwardedToNativeCommand,
+                    })
+                    : AgentBridgeResponse.Fail(submission.Message);
             case "get-chat-log":
                 var (cursor, limit) = ParseChatLogQuery(request.Arguments);
                 return AgentBridgeResponse.Ok("Chat log entries captured.", readChatLog(cursor, limit));
@@ -346,4 +354,21 @@ public sealed class AgentBridgeHost : IDisposable
         await dispatchOnFramework(() => result = action()).ConfigureAwait(false);
         return result!;
     }
+}
+
+public sealed record SlashCommandSubmission(
+    bool Submitted,
+    bool HandledByPluginCommand,
+    bool ForwardedToNativeCommand,
+    string Route,
+    string Message)
+{
+    public static SlashCommandSubmission PluginCommand() =>
+        new(true, true, false, "plugin", "Dalamud plugin command handled.");
+
+    public static SlashCommandSubmission NativeCommand() =>
+        new(true, false, true, "native", "Native game command submitted.");
+
+    public static SlashCommandSubmission Rejected(string message) =>
+        new(false, false, false, "rejected", message);
 }

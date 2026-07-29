@@ -37,6 +37,16 @@ The normal build also creates a private, loopback-only Dalamud repository at
 
 The in-game connector also supports `get-login-ui` and `begin-login` on its authenticated named pipe. Use `tools/Invoke-InGameBridge.ps1`; a login target is written as `Character Name@Home World`, and success means only that Lifestream accepted the work. The caller must still prove the rendered character selection and the eventual logged-in character/world/build.
 
+`send-chat` accepts one slash command and never accepts plain chat text. DAB gives
+registered Dalamud plugin commands first refusal, then forwards an unhandled slash
+command to the game's native command shell; its receipt identifies the `plugin` or
+`native` route. `get-chat-log` can then confirm local command output such as `/echo`
+without screen automation. Before native fallback, DAB switches ambient chat to the
+user-reserved Cross-world Linkshell 2 sink. Explicit chat commands and every alias
+derived from all four localized current `TextCommand` sheets are rejected, as are
+every command referenced by the current `Emote` data; local-only `/echo` remains
+available.
+
 ## Screenshot privacy
 
 Screenshot capture is disabled by default in MMF and must be explicitly enabled in that plugin's local configuration. A capture fails closed unless MMF itself is currently rendered, and only its current window rectangle is captured—not the full game viewport.
