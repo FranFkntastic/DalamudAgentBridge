@@ -13,6 +13,8 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 - [Screenshot privacy](#screenshot-privacy)
 - [Frame-validated control](#frame-validated-control)
 - [Plugin lifecycle](#plugin-lifecycle)
+- [Connect an agent](#connect-an-agent)
+- [Releases](#releases)
 - [Protocol convention](#protocol-convention)
 - [Contributing](#contributing)
 
@@ -114,6 +116,21 @@ Dev-plugin bootstrap is a separate, narrower surface: `POST /api/bridges/{bridge
 
 For repeated development, `tools\Test-Bridge.ps1` reuses a successful test result only while the source and test-assembly hashes remain unchanged. `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
 
+## Connect an agent
+
+The `dab-mcp` executable exposes DAB's bridge, manifest, snapshot, log,
+capture, deployment, and reviewed-action tools over MCP stdio. Follow the
+[MCP setup guide](docs/mcp-setup.md) for copy-paste Codex CLI and
+`config.toml` registration, verification, and approval defaults.
+
+## Releases
+
+Tagged releases provide Windows x64 utility and MCP bundles. Building the
+in-game connector still requires a local Dalamud development installation;
+maintainers can produce the complete release with
+`tools/Build-Release.ps1`. See [docs/releases.md](docs/releases.md) for the
+artifact contract and release procedure.
+
 ## Protocol convention
 
 Bridge-enabled plugins publish `agent-bridge/discovery-<pid>.json` beneath their plugin config directory and store `AgentBridgeAccessToken` in the adjacent plugin configuration JSON. Each named-pipe request and response is one JSON line.
@@ -121,7 +138,7 @@ Bridge-enabled plugins publish `agent-bridge/discovery-<pid>.json` beneath their
 ## Contributing
 
 Pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), target
-the `local-dev` integration branch, and keep live-client testing separate from
+`main`, and keep live-client testing separate from
 source-only verification. Security-sensitive reports belong in GitHub's private
 vulnerability reporting flow described in [SECURITY.md](SECURITY.md).
 

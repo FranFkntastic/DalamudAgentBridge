@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  utility-and-mcp:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: DalamudAgentBridge
+      - uses: actions/checkout@v6
+        with:
+          repository: FranFkntastic/Franthropy
+          path: Franthropy
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build MCP integration target
+        working-directory: DalamudAgentBridge
+        run: dotnet build src/dab-mcp/dab-mcp.csproj -c Debug -p:Platform=x64
+
+      - name: Test utility and protocol
+        working-directory: DalamudAgentBridge
+        run: dotnet test tests/DalamudAgentBridge.Tests/DalamudAgentBridge.Tests.csproj -c Release -p:Platform=x64
+
+      - name: Publish utility
+        working-directory: DalamudAgentBridge
+        run: dotnet publish src/DalamudAgentBridge/DalamudAgentBridge.csproj -c Release -r win-x64 --self-contained true -o artifacts/utility
+
+      - name: Publish MCP server
+        working-directory: DalamudAgentBridge
+        run: dotnet publish src/dab-mcp/dab-mcp.csproj -c Release -r win-x64 --self-contained true -o artifacts/mcp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dab-win-x64
+          path: |
+            DalamudAgentBridge/artifacts/utility/**
+            DalamudAgentBridge/artifacts/mcp/**
+          if-no-files-found: error

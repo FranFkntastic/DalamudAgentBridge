@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: DalamudAgentBridge
+      - uses: actions/checkout@v6
+        with:
+          repository: FranFkntastic/Franthropy
+          path: Franthropy
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Publish utility and MCP server
+        working-directory: DalamudAgentBridge
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid release tag: $env:GITHUB_REF_NAME" }
+          dotnet publish src/DalamudAgentBridge/DalamudAgentBridge.csproj -c Release -r win-x64 `
+            --self-contained true -o artifacts/release/utility -p:Version=$version
+          if ($LASTEXITCODE -ne 0) { throw 'Utility publish failed.' }
+          dotnet publish src/dab-mcp/dab-mcp.csproj -c Release -r win-x64 `
+            --self-contained true -o artifacts/release/mcp -p:Version=$version
+          if ($LASTEXITCODE -ne 0) { throw 'MCP publish failed.' }
+          Compress-Archive artifacts/release/utility/* artifacts/release/DalamudAgentBridge-utility-win-x64.zip
+          Compress-Archive artifacts/release/mcp/* artifacts/release/dab-mcp-win-x64.zip
+          Get-FileHash artifacts/release/*.zip -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content artifacts/release/SHA256SUMS.txt
+
+      - name: Create draft release
+        working-directory: DalamudAgentBridge
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            artifacts/release/*.zip `
+            artifacts/release/SHA256SUMS.txt `
+            --verify-tag --generate-notes --draft
