@@ -1,8 +1,37 @@
 # Dalamud Agent Bridge
 
-Local control and inspection utility for bridge-enabled Dalamud plugins.
+Local control and inspection utility for bridge-enabled Dalamud plugins, with
+HTTP, command-line, and MCP surfaces designed for development agents.
 
 The utility discovers named-pipe bridge advertisements under the current user's XIVLauncher plugin-config directory, then exposes a loopback-only dashboard and HTTP API. Access tokens never leave the machine and are never returned by its API.
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Run](#run)
+- [Safety boundary](#safety-boundary)
+- [Screenshot privacy](#screenshot-privacy)
+- [Frame-validated control](#frame-validated-control)
+- [Plugin lifecycle](#plugin-lifecycle)
+- [Protocol convention](#protocol-convention)
+- [Contributing](#contributing)
+
+## Prerequisites
+
+- Windows 10 version 1809 or newer.
+- The .NET 8 and .NET 10 SDKs.
+- A development Dalamud installation.
+- A sibling checkout of [Franthropy](https://github.com/FranFkntastic/Franthropy).
+
+The default build expects this layout:
+
+```text
+FFXIV-Development/
+  DalamudAgentBridge/
+  Franthropy/
+```
+
+Set `FranthropyDalamudProject` at build time if the repositories live elsewhere.
 
 ## Run
 
@@ -14,14 +43,18 @@ Open `http://127.0.0.1:45831`.
 
 Use `-NoBuild` after the first run when no source files have changed.
 
-Each named utility instance builds into its own output directory, so a running primary bridge cannot lock the secondary bridge's deployment. For a multibox instance:
+Each named utility instance builds into its own output directory, so a running
+primary bridge cannot lock another instance's deployment. For an additional
+XIVLauncher profile:
 
 ```powershell
-.\Run-Bridge.ps1 -InstanceName secondary -Port 45832 -PluginConfigRoot "$env:APPDATA\XIVLauncher-Multibox-2\pluginConfigs"
+.\Run-Bridge.ps1 -InstanceName secondary -Port 45832 -PluginConfigRoot "C:\path\to\profile\pluginConfigs"
 ```
 
 The normal build also creates a private, loopback-only Dalamud repository at
-`http://127.0.0.1:45831/repository/repo.json`. Add that URL under Dalamud Settings → Experimental → Custom Plugin Repositories. The source repository remains private; no GitHub token is placed in Dalamud configuration.
+`http://127.0.0.1:45831/repository/repo.json`. Add that URL under Dalamud
+Settings → Experimental → Custom Plugin Repositories. The repository contains
+your locally built plugin package and does not require a GitHub token.
 
 ## Safety boundary
 
@@ -49,7 +82,10 @@ available.
 
 ## Screenshot privacy
 
-Screenshot capture is disabled by default in MMF and must be explicitly enabled in that plugin's local configuration. A capture fails closed unless MMF itself is currently rendered, and only its current window rectangle is captured—not the full game viewport.
+Screenshot capture is disabled by default in MMF and must be explicitly enabled
+in that plugin's local configuration. A capture fails closed unless MMF itself
+is currently rendered, and only its current window rectangle is captured—not
+the full game viewport.
 
 The plugin encodes the crop in memory, protects the short handoff with Windows DPAPI for the current user, and never writes plaintext PNGs or sidecar metadata. The utility verifies the handoff, immediately deletes it, then stores both the image and its review metadata as separate DPAPI-encrypted files under the current user's local application-data directory. By default a review capture expires after 30 minutes; the authenticated local dashboard decrypts it only in memory for browser delivery. It can be cleared immediately from the dashboard. Browser delivery uses no-store headers and a Blob URL that is revoked when replaced or closed.
 
@@ -82,6 +118,11 @@ For repeated development, `tools\Test-Bridge.ps1` reuses a successful test resul
 
 Bridge-enabled plugins publish `agent-bridge/discovery-<pid>.json` beneath their plugin config directory and store `AgentBridgeAccessToken` in the adjacent plugin configuration JSON. Each named-pipe request and response is one JSON line.
 
-## Development handoff
+## Contributing
 
-See [docs/HANDOFF.md](docs/HANDOFF.md) for the current verified runtime state, repository boundaries, and continuation instructions. The remaining unfocused-capture work is checkpointed in [docs/UNFOCUSED_CAPTURE_PLAN.md](docs/UNFOCUSED_CAPTURE_PLAN.md).
+Pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), target
+the `local-dev` integration branch, and keep live-client testing separate from
+source-only verification. Security-sensitive reports belong in GitHub's private
+vulnerability reporting flow described in [SECURITY.md](SECURITY.md).
+
+DAB is licensed under the [GNU General Public License v3.0](LICENSE).
