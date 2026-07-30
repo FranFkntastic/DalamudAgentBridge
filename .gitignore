@@ -4,5 +4,6 @@ obj/
 .run/
 src/DalamudAgentBridge/wwwroot/repository/
 /artifacts/
+*.tspack
 *.user
 .superpowers/
