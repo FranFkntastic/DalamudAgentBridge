@@ -1,10 +1,15 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game;
 using Dalamud.Game.Chat;
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.System.String;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using Franthropy.Dalamud.AgentBridge;
 using Franthropy.Dalamud.Travel;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -36,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
     private readonly DalamudLifestreamLogin lifestreamLogin;
+    private readonly NativeSlashCommandPolicy nativeSlashCommandPolicy;
     private int windowOpenState;
     private int requestedCollapsedState;
     private int windowCollapsedState;
@@ -49,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
         IClientState clientState,
         IObjectTable objectTable,
         IChatGui chatGui,
+        IDataManager dataManager,
         IGameGui gameGui,
         ITextureProvider textureProvider,
         ITextureReadbackProvider textureReadbackProvider)
@@ -60,6 +67,7 @@ public sealed class Plugin : IDalamudPlugin
         this.clientState = clientState;
         this.objectTable = objectTable;
         this.chatGui = chatGui;
+        nativeSlashCommandPolicy = CreateNativeSlashCommandPolicy(dataManager);
         this.chatGui.ChatMessage += OnChatMessage;
         renderedTextActions = new(gameGui);
         lifestreamLogin = new(pluginInterface);
@@ -69,7 +77,8 @@ public sealed class Plugin : IDalamudPlugin
             () => WindowOpen,
             value => WindowOpen = value,
             () => WindowCollapsed,
-            RequestWindowCollapsed);
+            RequestWindowCollapsed,
+            RestoreCaptureCollapseState);
         viewportCapture = new AgentBridgeViewportCaptureService(
             pluginInterface.GetPluginConfigDirectory(),
             configuration.PluginInstanceId,
@@ -162,13 +171,84 @@ public sealed class Plugin : IDalamudPlugin
             message.Sender.TextValue,
             message.Message.TextValue);
 
-    private bool SendChatLine(string line)
+    private unsafe SlashCommandSubmission SendChatLine(string line)
     {
-        // Command-only by policy: the bridge must never put plain text into a
-        // chat channel. Anything that is not a slash command is rejected.
-        if (string.IsNullOrWhiteSpace(line) || !line.TrimStart().StartsWith('/'))
-            return false;
-        return commandManager.ProcessCommand(line);
+        var policyDecision = nativeSlashCommandPolicy.Evaluate(line);
+        if (!policyDecision.Allowed)
+            return SlashCommandSubmission.Rejected(policyDecision.Message);
+
+        if (commandManager.ProcessCommand(policyDecision.CommandLine))
+            return SlashCommandSubmission.PluginCommand();
+
+        var uiModule = UIModule.Instance();
+        var shellModule = RaptureShellModule.Instance();
+        if (uiModule == null || shellModule == null)
+            return SlashCommandSubmission.Rejected("The native game command shell is unavailable.");
+
+        try
+        {
+            // The user's CWLS2 is intentionally reserved as a sink. Resetting
+            // ambient chat immediately before fallback contains any later
+            // plain-text typo, while explicit channel commands remain blocked.
+            using var sinkCommand = new Utf8String("/cwlinkshell2");
+            shellModule->ExecuteCommandInner(&sinkCommand, uiModule);
+
+            using var command = new Utf8String(policyDecision.CommandLine);
+            shellModule->ExecuteCommandInner(&command, uiModule);
+            return SlashCommandSubmission.NativeCommand();
+        }
+        catch (Exception exception)
+        {
+            return SlashCommandSubmission.Rejected($"Native game command submission failed: {exception.Message}");
+        }
+    }
+
+    private static NativeSlashCommandPolicy CreateNativeSlashCommandPolicy(IDataManager dataManager)
+    {
+        ClientLanguage[] languages =
+        [
+            ClientLanguage.Japanese,
+            ClientLanguage.English,
+            ClientLanguage.German,
+            ClientLanguage.French,
+        ];
+        var commands = languages
+            .SelectMany(language => dataManager
+                .GetExcelSheet<TextCommand>(language)
+                .Select(command => new NativeTextCommandDefinition(
+                    command.RowId,
+                    command.Param.RowId,
+                    [
+                        command.Alias.ToString(),
+                        command.ShortAlias.ToString(),
+                        command.Command.ToString(),
+                        command.ShortCommand.ToString(),
+                    ])))
+            .GroupBy(command => command.RowId)
+            .Select(MergeLocalizedCommandRows)
+            .ToArray();
+        var emoteCommandRowIds = languages
+            .SelectMany(language => dataManager
+                .GetExcelSheet<Emote>(language)
+                .Select(emote => emote.TextCommand.RowId))
+            .Where(rowId => rowId != 0)
+            .Distinct()
+            .ToArray();
+        return new NativeSlashCommandPolicy(
+            NativeSlashCommandCatalog.CreateBlockedCommands(commands, emoteCommandRowIds));
+    }
+
+    private static NativeTextCommandDefinition MergeLocalizedCommandRows(
+        IGrouping<uint, NativeTextCommandDefinition> rows)
+    {
+        var parameterRows = rows.Select(row => row.ParameterRowId).Distinct().ToArray();
+        if (parameterRows.Length != 1)
+            throw new InvalidOperationException(
+                $"Current localized FFXIV command data disagrees on the parameter schema for row {rows.Key}; refusing native command execution.");
+        return new NativeTextCommandDefinition(
+            rows.Key,
+            parameterRows[0],
+            rows.SelectMany(row => row.Aliases).ToArray());
     }
 
     private void OpenWindow() => RequestWindowOpen();
@@ -186,6 +266,18 @@ public sealed class Plugin : IDalamudPlugin
 
     private void RequestWindowCollapsed(bool collapsed) =>
         Interlocked.Exchange(ref requestedCollapsedState, collapsed ? 1 : 2);
+
+    private void RestoreCaptureCollapseState(bool wasOpen, bool wasCollapsed)
+    {
+        if (!wasOpen)
+        {
+            Interlocked.Exchange(ref requestedCollapsedState, 0);
+            Volatile.Write(ref windowCollapsedState, 0);
+            return;
+        }
+
+        RequestWindowCollapsed(wasCollapsed);
+    }
 
     private void Draw()
     {
