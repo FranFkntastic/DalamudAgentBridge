@@ -22,7 +22,7 @@ The build accepts `FranthropyDalamudProject` when you need a different layout.
 
 ## Branch and Pull Request Flow
 
-Create your branch from `local-dev` and target `local-dev` in the pull request.
+Create your branch from `main` and target `main` in the pull request.
 Keep each change focused enough to review as one safety or capability decision.
 Explain what changed, why it belongs in DAB or Franthropy, and which checks
 proved it.

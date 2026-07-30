@@ -1,6 +1,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+
+    [string]$FranthropyDalamudProject
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,7 +14,11 @@ $zipPath = Join-Path $repositoryRoot 'DalamudAgentBridge.zip'
 $repoPath = Join-Path $repositoryRoot 'repo.json'
 
 Remove-Item -LiteralPath $pluginOutput -Recurse -Force -ErrorAction SilentlyContinue
-dotnet build $pluginProject -c $Configuration
+$buildArguments = @('build', $pluginProject, '-c', $Configuration)
+if ($FranthropyDalamudProject) {
+    $buildArguments += "-p:FranthropyDalamudProject=$FranthropyDalamudProject"
+}
+dotnet @buildArguments
 if ($LASTEXITCODE -ne 0) { throw 'Plugin build failed.' }
 
 Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue

@@ -14,9 +14,9 @@ attaching evidence.
 
 ## Supported Code
 
-Security fixes target the current `local-dev` integration branch and are carried
-to `main` when released. Older commits and locally modified builds may not
-receive fixes.
+Security fixes target `main`. Tagged releases receive a patch release when the
+affected version is still supported; older commits and locally modified builds
+may not receive fixes.
 
 ## Security Boundary
 

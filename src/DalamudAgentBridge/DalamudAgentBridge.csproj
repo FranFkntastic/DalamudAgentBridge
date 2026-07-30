@@ -12,10 +12,14 @@
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <FranthropyDalamudProject Condition="'$(FranthropyDalamudProject)' == ''">..\..\..\Franthropy\src\Franthropy.Dalamud\Franthropy.Dalamud.csproj</FranthropyDalamudProject>
+    <FranthropyAgentBridgeProject Condition="'$(FranthropyAgentBridgeProject)' == ''">..\..\..\Franthropy\src\Franthropy.AgentBridge\Franthropy.AgentBridge.csproj</FranthropyAgentBridgeProject>
   </PropertyGroup>
+  <Target Name="RequireFranthropyAgentBridge" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(FranthropyAgentBridgeProject)')"
+      Text="Franthropy.AgentBridge was not found at '$(FranthropyAgentBridgeProject)'. Clone Franthropy beside DalamudAgentBridge or set -p:FranthropyAgentBridgeProject=&quot;path\to\Franthropy.AgentBridge.csproj&quot;." />
+  </Target>
   <ItemGroup>
-    <ProjectReference Include="$(FranthropyDalamudProject)" />
+    <ProjectReference Include="$(FranthropyAgentBridgeProject)" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />

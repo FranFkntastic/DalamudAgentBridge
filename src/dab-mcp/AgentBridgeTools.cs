@@ -35,10 +35,10 @@ public sealed class AgentBridgeTools
         this.reviewVault = reviewVault;
     }
 
-    [McpServerTool(Name = "bridge_list"), Description("List live authenticated Dalamud plugin bridges and their stable profile identities. Read-only.")]
+    [McpServerTool(Name = "bridge_list", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("List live authenticated Dalamud plugin bridges and their stable profile identities. Read-only.")]
     public string List() => Json(client.List());
 
-    [McpServerTool(Name = "bridge_health"), Description("Check that a plugin bridge is reachable and return its exact loaded assembly identity and capability manifest. Read-only.")]
+    [McpServerTool(Name = "bridge_health", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Check that a plugin bridge is reachable and return its exact loaded assembly identity and capability manifest. Read-only.")]
     public async Task<string> Health(
         [Description("Plugin internal name, for example RQ or MarketMafioso.")] string plugin,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
@@ -46,7 +46,7 @@ public sealed class AgentBridgeTools
         CancellationToken cancellationToken = default) =>
         Json(await client.GetHealthAsync(Target(plugin, profile, processId), cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_manifest"), Description("Read the selected plugin bridge's versioned capabilities, semantic actions, review surfaces, and exact runtime identity. Read-only.")]
+    [McpServerTool(Name = "bridge_manifest", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read the selected plugin bridge's versioned capabilities, semantic actions, review surfaces, and exact runtime identity. Read-only.")]
     public async Task<string> Manifest(
         [Description("Plugin internal name.")] string plugin,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
@@ -54,14 +54,14 @@ public sealed class AgentBridgeTools
         CancellationToken cancellationToken = default) =>
         Json(await client.GetManifestAsync(Target(plugin, profile, processId), cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_plugins"), Description("List installed Dalamud plugins and their public or safely discovered UI entry points through the standalone connector. Read-only.")]
+    [McpServerTool(Name = "bridge_plugins", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("List installed Dalamud plugins and their public or safely discovered UI entry points through the standalone connector. Read-only.")]
     public async Task<string> Plugins(
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
         [Description("Optional FFXIV process id when a profile has multiple clients.")] int? processId = null,
         CancellationToken cancellationToken = default) =>
         Json(await client.GetPluginSurfaceCatalogAsync(null, profile, processId, cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_surfaces"), Description("List public and bounded-reflection UI surfaces for one installed plugin. This only observes serialized state; it does not open, close, focus, or invoke the plugin. Read-only.")]
+    [McpServerTool(Name = "bridge_surfaces", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("List public and bounded-reflection UI surfaces for one installed plugin. This only observes serialized state; it does not open, close, focus, or invoke the plugin. Read-only.")]
     public async Task<string> Surfaces(
         [Description("Installed plugin internal name.")] string plugin,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
@@ -69,7 +69,7 @@ public sealed class AgentBridgeTools
         CancellationToken cancellationToken = default) =>
         Json(await client.GetPluginSurfaceCatalogAsync(plugin, profile, processId, cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_surface_inspect"), Description("Refresh and inspect one discovered plugin UI surface by stable surface id. Read-only; reflected objects never leave the connector.")]
+    [McpServerTool(Name = "bridge_surface_inspect", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Refresh and inspect one discovered plugin UI surface by stable surface id. Read-only; reflected objects never leave the connector.")]
     public async Task<string> InspectSurface(
         [Description("Installed plugin internal name.")] string plugin,
         [Description("Stable surface id returned by bridge_surfaces.")] string surfaceId,
@@ -85,7 +85,7 @@ public sealed class AgentBridgeTools
             : Json(new { success = true, catalog.CapturedAtUtc, catalog.CatalogRevision, surface });
     }
 
-    [McpServerTool(Name = "bridge_surface_present"), Description("Open and uncollapse one reflected plugin window under a short-lived reversible lease. Returns the exact prior state and transaction id; the connector auto-restores on expiry.")]
+    [McpServerTool(Name = "bridge_surface_present", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Open and uncollapse one reflected plugin window under a short-lived reversible lease. Returns the exact prior state and transaction id; the connector auto-restores on expiry.")]
     public async Task<string> PresentSurface(
         [Description("Installed plugin internal name.")] string plugin,
         [Description("Reversible reflected surface id returned by bridge_surfaces.")] string surfaceId,
@@ -95,7 +95,7 @@ public sealed class AgentBridgeTools
         Json(await client.BeginPluginSurfacePresentationAsync(
             plugin, surfaceId, profile, processId, cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_surface_restore"), Description("Finish a reflected surface presentation lease and restore the exact prior open, collapsed, and focus-request state.")]
+    [McpServerTool(Name = "bridge_surface_restore", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Finish a reflected surface presentation lease and restore the exact prior open, collapsed, and focus-request state.")]
     public async Task<string> RestoreSurface(
         [Description("Transaction id returned by bridge_surface_present.")] string transactionId,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
@@ -104,7 +104,7 @@ public sealed class AgentBridgeTools
         Json(await client.RestorePluginSurfacePresentationAsync(
             transactionId, profile, processId, cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_surface_capture"), Description("Present one reflected plugin window, capture the rendered game viewport, verify and store the encrypted handoff, then restore prior window state in a finally path.")]
+    [McpServerTool(Name = "bridge_surface_capture", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Present one reflected plugin window, capture the rendered game viewport, verify and store the encrypted handoff, then restore prior window state in a finally path.")]
     public async Task<CallToolResult> CaptureSurface(
         [Description("Installed plugin internal name.")] string plugin,
         [Description("Reversible reflected surface id returned by bridge_surfaces.")] string surfaceId,
@@ -134,7 +134,7 @@ public sealed class AgentBridgeTools
         }
     }
 
-    [McpServerTool(Name = "bridge_snapshot"), Description("Read the plugin's current automation and UI state snapshot. Read-only and safe while the game is unfocused.")]
+    [McpServerTool(Name = "bridge_snapshot", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read the plugin's current automation and UI state snapshot. Read-only and safe while the game is unfocused.")]
     public async Task<string> Snapshot(
         [Description("Plugin internal name.")] string plugin,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
@@ -142,7 +142,7 @@ public sealed class AgentBridgeTools
         CancellationToken cancellationToken = default) =>
         Json(await client.GetSnapshotAsync(Target(plugin, profile, processId), cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_wait"), Description("Wait until a dot-path in the plugin snapshot exists or equals a value. This subscribes the caller to an observable completion condition instead of guessing with sleeps.")]
+    [McpServerTool(Name = "bridge_wait", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Wait until a dot-path in the plugin snapshot exists or equals a value. This subscribes the caller to an observable completion condition instead of guessing with sleeps.")]
     public async Task<string> Wait(
         [Description("Plugin internal name.")] string plugin,
         [Description("Dot-separated snapshot path, for example refreshActive.")] string path,
@@ -157,7 +157,7 @@ public sealed class AgentBridgeTools
             TimeSpan.FromMilliseconds(Math.Clamp(timeoutMilliseconds, 250, 300000)),
             cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_logs"), Description("Read action-scoped Dalamud log lines for the selected client. Use the returned nextCursor on the next call. Read-only.")]
+    [McpServerTool(Name = "bridge_logs", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read action-scoped Dalamud log lines for the selected client. Use the returned nextCursor on the next call. Read-only.")]
     public string Logs(
         [Description("Plugin internal name.")] string plugin,
         [Description("Exclusive cursor returned by a previous call. Omit for the newest log window.")] long? cursor = null,
@@ -166,7 +166,7 @@ public sealed class AgentBridgeTools
         [Description("Optional FFXIV process id.")] int? processId = null) =>
         Json(client.ReadLogs(Target(plugin, profile, processId), cursor, limit));
 
-    [McpServerTool(Name = "bridge_chat_log"), Description("Read in-game chat log lines observed by the connector since it loaded, including other plugins' chat output. Use the returned nextCursor on the next call. Read-only.")]
+    [McpServerTool(Name = "bridge_chat_log", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read in-game chat log lines observed by the connector since it loaded, including other plugins' chat output. Use the returned nextCursor on the next call. Read-only.")]
     public async Task<string> ChatLog(
         [Description("Plugin internal name.")] string plugin,
         [Description("Exclusive cursor returned by a previous call. Omit for the newest chat window.")] long? cursor = null,
@@ -176,7 +176,7 @@ public sealed class AgentBridgeTools
         CancellationToken cancellationToken = default) =>
         Json(await client.ReadChatLogAsync(Target(plugin, profile, processId), cursor, limit, cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_act"), Description("Invoke one manifest-declared semantic control after the bridge renders and reviews that exact control. This cannot inject arbitrary mouse or keyboard input and cannot bypass the plugin allowlist.")]
+    [McpServerTool(Name = "bridge_act", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Invoke one manifest-declared semantic control after the bridge renders and reviews that exact control. This cannot inject arbitrary mouse or keyboard input and cannot bypass the plugin allowlist.")]
     public async Task<string> Act(
         [Description("Plugin internal name.")] string plugin,
         [Description("Manifest review surface id. Omit when the action id uniquely identifies its surface.")] string? surfaceId = null,
@@ -223,7 +223,7 @@ public sealed class AgentBridgeTools
         }
     }
 
-    [McpServerTool(Name = "bridge_deploy"), Description("Deploy a built dev-plugin directory to the exact directory of the selected loaded plugin, wait for hot reload, and prove the loaded DLL SHA-256. Installed package directories are refused and failed deployments roll back.")]
+    [McpServerTool(Name = "bridge_deploy", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Deploy a built dev-plugin directory to the exact directory of the selected loaded plugin, wait for hot reload, and prove the loaded DLL SHA-256. Installed package directories are refused and failed deployments roll back.")]
     public async Task<string> Deploy(
         [Description("Plugin internal name.")] string plugin,
         [Description("Absolute directory containing the built plugin DLL and manifest JSON.")] string sourceDirectory,
@@ -242,7 +242,7 @@ public sealed class AgentBridgeTools
             },
             cancellationToken).ConfigureAwait(false));
 
-    [McpServerTool(Name = "bridge_capture"), Description("Capture a plugin-declared review surface through its authenticated bridge, verify the encrypted handoff and SHA-256, and return the PNG directly. No desktop-control or arbitrary screen-capture permission is granted.")]
+    [McpServerTool(Name = "bridge_capture", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Capture a plugin-declared review surface through its authenticated bridge, verify the encrypted handoff and SHA-256, and return the PNG directly. No desktop-control or arbitrary screen-capture permission is granted.")]
     public async Task<CallToolResult> Capture(
         [Description("Plugin internal name.")] string plugin,
         [Description("Optional manifest capture target. Omit for the plugin's default review surface.")] string? target = null,
@@ -275,7 +275,7 @@ public sealed class AgentBridgeTools
         }
     }
 
-    [McpServerTool(Name = "bridge_install_plugin"), Description("Install and load a plugin from the profile's configured Dalamud plugin repositories through the in-game connector. Refuses plugins that are already installed and cannot install over the bridge itself. Installs the release channel build.")]
+    [McpServerTool(Name = "bridge_install_plugin", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true), Description("Install and load a plugin from the profile's configured Dalamud plugin repositories through the in-game connector. Refuses plugins that are already installed and cannot install over the bridge itself. Installs the release channel build.")]
     public async Task<string> InstallPlugin(
         [Description("Internal name of the plugin to install, for example MarketBoardPlugin.")] string plugin,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
