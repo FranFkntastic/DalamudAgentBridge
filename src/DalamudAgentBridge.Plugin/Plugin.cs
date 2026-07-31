@@ -78,29 +78,6 @@ public sealed class Plugin : IDalamudPlugin
         lifestreamLogin = new(pluginInterface);
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         configuration.Initialize(pluginInterface);
-        try
-        {
-            sharedObservationHost = new DalamudSharedObservationHost(new DalamudSharedObservationHostOptions
-            {
-                PluginConfigDirectory = pluginInterface.GetPluginConfigDirectory(),
-                PluginName = "DalamudAgentBridge",
-                PluginInstanceId = Guid.NewGuid().ToString("N"),
-                GameBuild = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion(),
-                GameInventory = gameInventory,
-                PlayerState = playerState,
-                AddonLifecycle = addonLifecycle,
-                Diagnostic = (message, exception) =>
-                {
-                    if (exception is null) pluginLog.Warning(message);
-                    else pluginLog.Error(exception, message);
-                },
-            });
-            sharedObservationHost.Start();
-        }
-        catch (Exception exception)
-        {
-            pluginLog.Error(exception, "Dalamud Agent Bridge shared-observation hosting is unavailable.");
-        }
         captureTransactions = new AgentBridgeUiCaptureTransactionManager(
             () => WindowOpen,
             value => WindowOpen = value,
@@ -162,6 +139,31 @@ public sealed class Plugin : IDalamudPlugin
         pluginInterface.UiBuilder.Draw += Draw;
         pluginInterface.UiBuilder.OpenConfigUi += OpenWindow;
         pluginInterface.UiBuilder.OpenMainUi += OpenWindow;
+        try
+        {
+            sharedObservationHost = new DalamudSharedObservationHost(new DalamudSharedObservationHostOptions
+            {
+                PluginConfigDirectory = pluginInterface.GetPluginConfigDirectory(),
+                PluginName = "DalamudAgentBridge",
+                PluginInstanceId = Guid.NewGuid().ToString("N"),
+                GameBuild = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion(),
+                GameInventory = gameInventory,
+                PlayerState = playerState,
+                AddonLifecycle = addonLifecycle,
+                Diagnostic = (message, exception) =>
+                {
+                    if (exception is null) pluginLog.Warning(message);
+                    else pluginLog.Error(exception, message);
+                },
+            });
+            sharedObservationHost.Start();
+        }
+        catch (Exception exception)
+        {
+            sharedObservationHost?.Dispose();
+            sharedObservationHost = null;
+            pluginLog.Error(exception, "Dalamud Agent Bridge shared-observation hosting is unavailable.");
+        }
     }
 
     public void Dispose()
