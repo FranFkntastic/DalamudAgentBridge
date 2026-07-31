@@ -9,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using Franthropy.Dalamud.AgentBridge;
 using Franthropy.Dalamud.Travel;
+using Franthropy.Dalamud.Observations;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
@@ -42,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
     private readonly DalamudLifestreamLogin lifestreamLogin;
     private readonly NativeSlashCommandPolicy nativeSlashCommandPolicy;
+    private readonly DalamudSharedObservationHost? sharedObservationHost;
     private int windowOpenState;
     private int requestedCollapsedState;
     private int windowCollapsedState;
@@ -55,6 +57,9 @@ public sealed class Plugin : IDalamudPlugin
         IClientState clientState,
         IObjectTable objectTable,
         IChatGui chatGui,
+        IGameInventory gameInventory,
+        IAddonLifecycle addonLifecycle,
+        IPluginLog pluginLog,
         IDataManager dataManager,
         IGameGui gameGui,
         ITextureProvider textureProvider,
@@ -73,6 +78,29 @@ public sealed class Plugin : IDalamudPlugin
         lifestreamLogin = new(pluginInterface);
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         configuration.Initialize(pluginInterface);
+        try
+        {
+            sharedObservationHost = new DalamudSharedObservationHost(new DalamudSharedObservationHostOptions
+            {
+                PluginConfigDirectory = pluginInterface.GetPluginConfigDirectory(),
+                PluginName = "DalamudAgentBridge",
+                PluginInstanceId = Guid.NewGuid().ToString("N"),
+                GameBuild = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion(),
+                GameInventory = gameInventory,
+                PlayerState = playerState,
+                AddonLifecycle = addonLifecycle,
+                Diagnostic = (message, exception) =>
+                {
+                    if (exception is null) pluginLog.Warning(message);
+                    else pluginLog.Error(exception, message);
+                },
+            });
+            sharedObservationHost.Start();
+        }
+        catch (Exception exception)
+        {
+            pluginLog.Error(exception, "Dalamud Agent Bridge shared-observation hosting is unavailable.");
+        }
         captureTransactions = new AgentBridgeUiCaptureTransactionManager(
             () => WindowOpen,
             value => WindowOpen = value,
@@ -143,6 +171,7 @@ public sealed class Plugin : IDalamudPlugin
         chatGui.ChatMessage -= OnChatMessage;
         viewportCapture.Dispose();
         pluginSurfacePresentation.Dispose();
+        sharedObservationHost?.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
         pluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
