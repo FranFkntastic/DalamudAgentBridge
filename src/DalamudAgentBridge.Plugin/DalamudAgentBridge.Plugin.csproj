@@ -31,7 +31,7 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <DevPluginDeployDir Condition="'$(DevPluginDeployDir)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\_deployed\DalamudAgentBridge'))</DevPluginDeployDir>
   </PropertyGroup>
-  <Target Name="SyncToDevPlugins" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+  <Target Name="SyncToDevPlugins" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' and '$(SkipDevPluginSync)' != 'true'">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\Sync-DevPlugin.ps1&quot; -SourceDir &quot;$(TargetDir).&quot; -DestDir &quot;$(DevPluginDeployDir)&quot; -PluginName &quot;$(AssemblyName)&quot;" />
   </Target>
 </Project>
