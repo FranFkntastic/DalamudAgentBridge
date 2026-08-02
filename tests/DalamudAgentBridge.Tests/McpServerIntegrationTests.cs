@@ -14,7 +14,9 @@ public sealed class McpServerIntegrationTests
         {
             Path.Combine(repository, "src", "dab-mcp", "bin", "Debug", "net8.0-windows10.0.26100.0", "win-x64", "dab-mcp.exe"),
             Path.Combine(repository, "src", "dab-mcp", "bin", "x64", "Debug", "net8.0-windows10.0.26100.0", "win-x64", "dab-mcp.exe"),
-        }.FirstOrDefault(File.Exists) ?? Path.Combine(repository, "src", "dab-mcp", "bin", "Debug", "net8.0-windows10.0.26100.0", "win-x64", "dab-mcp.exe");
+        }.Where(File.Exists)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault() ?? Path.Combine(repository, "src", "dab-mcp", "bin", "Debug", "net8.0-windows10.0.26100.0", "win-x64", "dab-mcp.exe");
         Assert.True(File.Exists(server), $"Build the solution before running the MCP integration test: {server}");
         await using var client = await McpClient.CreateAsync(new StdioClientTransport(new StdioClientTransportOptions
         {
@@ -29,6 +31,10 @@ public sealed class McpServerIntegrationTests
         Assert.Contains(tools, tool => tool.Name == "bridge_act");
         Assert.Contains(tools, tool => tool.Name == "bridge_deploy");
         Assert.Contains(tools, tool => tool.Name == "bridge_capture");
+        Assert.Contains(tools, tool => tool.Name == "bridge_situation");
+        Assert.Contains(tools, tool => tool.Name == "bridge_navigate");
+        Assert.Contains(tools, tool => tool.Name == "bridge_navigation_cancel");
+        Assert.Contains(tools, tool => tool.Name == "bridge_capture_clip");
         var result = await client.CallToolAsync("bridge_list", new Dictionary<string, object?>());
         Assert.NotEqual(true, result.IsError);
         Assert.NotEmpty(result.Content);

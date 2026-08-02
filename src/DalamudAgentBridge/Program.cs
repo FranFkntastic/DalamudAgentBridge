@@ -28,6 +28,7 @@ builder.Services.AddSingleton<LocalPluginBuildReplacementService>();
 builder.Services.AddSingleton<AgentBridgeClient>();
 builder.Services.AddSingleton<DevPluginDeploymentService>();
 builder.Services.AddSingleton<PluginCaptureService>();
+builder.Services.AddSingleton<DiagnosticClipService>();
 builder.Services.AddSingleton<PluginSurfaceCaptureService>();
 
 var app = builder.Build();
@@ -102,9 +103,58 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "disable-plugin",
     "install-plugin",
     "install-dev-plugin",
+    "get-situation",
+    "get-navigation",
+    "navigate-to",
+    "cancel-navigation",
 };
 
 app.MapGet("/api/bridges", (AgentBridgeClient client) => client.List());
+
+app.MapGet("/api/bridges/{id}/situation", async (
+    string id,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient pipe,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var response = await pipe.SendAsync(instance, "get-situation", null, cancellationToken).ConfigureAwait(false);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Situation read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/diagnostic-clips", async (
+    string id,
+    DiagnosticClipRequest request,
+    BridgeRegistry registry,
+    DiagnosticClipService clips,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var receipt = await clips.CaptureAsync(instance, request, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(new { success = receipt.Failure is null, message = receipt.Failure ?? "Diagnostic clip captured.", receipt });
+    }
+    catch (ArgumentOutOfRangeException ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Diagnostic clip failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
 
 app.MapGet("/api/plugin-surfaces", async (
     string? plugin,

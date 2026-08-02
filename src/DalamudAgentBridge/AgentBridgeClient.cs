@@ -68,6 +68,49 @@ public sealed class AgentBridgeClient
         return receipt.Clone();
     }
 
+    public Task<JsonElement> GetSituationAsync(BridgeTargetSelector selector, CancellationToken cancellationToken) =>
+        GetSituationAsync(Resolve(selector), cancellationToken);
+
+    public async Task<JsonElement> GetSituationAsync(BridgeInstance instance, CancellationToken cancellationToken)
+    {
+        var response = await pipe.SendAsync(instance, "get-situation", null, cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Clone();
+    }
+
+    public async Task<JsonElement> GetNavigationAsync(BridgeTargetSelector selector, CancellationToken cancellationToken)
+    {
+        var response = await pipe.SendAsync(Resolve(selector), "get-navigation", null, cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Clone();
+    }
+
+    public Task<PluginBridgeResponse> NavigateAsync(
+        BridgeTargetSelector selector,
+        NavigationTargetRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var arguments = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return pipe.SendAsync(
+            Resolve(selector),
+            "navigate-to",
+            new BridgeCommandRequest { Arguments = arguments },
+            cancellationToken);
+    }
+
+    public Task<PluginBridgeResponse> CancelNavigationAsync(
+        BridgeTargetSelector selector,
+        string? operationId,
+        CancellationToken cancellationToken) =>
+        pipe.SendAsync(
+            Resolve(selector),
+            "cancel-navigation",
+            new BridgeCommandRequest { OperationId = operationId },
+            cancellationToken);
+
     public async Task<AgentBridgePluginSurfaceCatalog> GetPluginSurfaceCatalogAsync(
         string? targetPlugin,
         string? profile,

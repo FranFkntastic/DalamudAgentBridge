@@ -16,6 +16,7 @@ public sealed class AgentBridgeTools
     private readonly PluginLifecycleClient lifecycle;
     private readonly DevPluginDeploymentService deployment;
     private readonly PluginCaptureService capture;
+    private readonly DiagnosticClipService clips;
     private readonly PluginSurfaceCaptureService surfaceCapture;
     private readonly ReviewVault reviewVault;
 
@@ -24,6 +25,7 @@ public sealed class AgentBridgeTools
         PluginLifecycleClient lifecycle,
         DevPluginDeploymentService deployment,
         PluginCaptureService capture,
+        DiagnosticClipService clips,
         PluginSurfaceCaptureService surfaceCapture,
         ReviewVault reviewVault)
     {
@@ -31,6 +33,7 @@ public sealed class AgentBridgeTools
         this.lifecycle = lifecycle;
         this.deployment = deployment;
         this.capture = capture;
+        this.clips = clips;
         this.surfaceCapture = surfaceCapture;
         this.reviewVault = reviewVault;
     }
@@ -141,6 +144,51 @@ public sealed class AgentBridgeTools
         [Description("Optional FFXIV process id.")] int? processId = null,
         CancellationToken cancellationToken = default) =>
         Json(await client.GetSnapshotAsync(Target(plugin, profile, processId), cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_situation", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Summarize the current character situation from bounded Dalamud observations: location, character resources, conditions, target, nearby objects, party, visible decision UI, recent chat, and DAB-owned navigation progress. Read-only.")]
+    public async Task<string> Situation(
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id when a profile has multiple clients.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.GetSituationAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_navigation", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read DAB's current or most recent navigation operation, including destination, distance, progress timestamp, deadline, and vnavmesh lifecycle. Read-only.")]
+    public async Task<string> Navigation(
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.GetNavigationAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_navigate", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Ask vnavmesh to move the current character to an explicit world-space point in the current territory. Requires the separate in-game navigation permission, refuses concurrent ownership, and returns an observable operation id.")]
+    public async Task<string> Navigate(
+        [Description("Exact current FFXIV territory type id; cross-territory requests are refused.")] uint territoryType,
+        [Description("World-space X coordinate.")] float x,
+        [Description("World-space Y coordinate.")] float y,
+        [Description("World-space Z coordinate.")] float z,
+        [Description("Arrival radius in yalms, from 0.5 through 50.")] float arrivalRadius = 1.5f,
+        [Description("Hard timeout in seconds, from 5 through 900.")] int timeoutSeconds = 120,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.NavigateAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            new NavigationTargetRequest(territoryType, x, y, z, arrivalRadius, timeoutSeconds),
+            cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_navigation_cancel", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false), Description("Stop the navigation operation currently owned by DAB. An operation id can be supplied to prevent cancelling a newer request.")]
+    public async Task<string> CancelNavigation(
+        [Description("Optional operation id returned by bridge_navigate.")] string? operationId = null,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.CancelNavigationAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            operationId,
+            cancellationToken).ConfigureAwait(false));
 
     [McpServerTool(Name = "bridge_wait", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Wait until a dot-path in the plugin snapshot exists or equals a value. This subscribes the caller to an observable completion condition instead of guessing with sleeps.")]
     public async Task<string> Wait(
@@ -273,6 +321,43 @@ public sealed class AgentBridgeTools
         {
             CryptographicOperations.ZeroMemory(pngBytes);
         }
+    }
+
+    [McpServerTool(Name = "bridge_capture_clip", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Capture a bounded diagnostic clip of the live FFXIV viewport as 2-12 ordered PNG frames through DAB's existing screenshot permission, DPAPI handoff, hash verification, and encrypted review vault. This does not capture the desktop or create an indefinite stream.")]
+    public async Task<CallToolResult> CaptureClip(
+        [Description("Number of ordered frames, from 2 through 12.")] int frameCount = 6,
+        [Description("Time between requested frames in milliseconds, from 250 through 5000; total span is capped at 60 seconds.")] int intervalMilliseconds = 1000,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var receipt = await clips.CaptureAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            new DiagnosticClipRequest(frameCount, intervalMilliseconds),
+            cancellationToken).ConfigureAwait(false);
+        var content = new List<ContentBlock>
+        {
+            new TextContentBlock { Text = Json(receipt) },
+        };
+        foreach (var frame in receipt.Frames)
+        {
+            if (!reviewVault.TryRead(frame.Capture.Review.Id, out var pngBytes))
+                continue;
+            try
+            {
+                content.Add(new TextContentBlock { Text = $"Frame {frame.Index} captured at {frame.Capture.Receipt.CapturedAtUtc:O}." });
+                content.Add(new ImageContentBlock
+                {
+                    Data = Encoding.UTF8.GetBytes(Convert.ToBase64String(pngBytes)),
+                    MimeType = "image/png",
+                });
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(pngBytes);
+            }
+        }
+        return new CallToolResult { Content = content };
     }
 
     [McpServerTool(Name = "bridge_install_plugin", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true), Description("Install and load a plugin from the profile's configured Dalamud plugin repositories through the in-game connector. Refuses plugins that are already installed and cannot install over the bridge itself. Installs the release channel build.")]

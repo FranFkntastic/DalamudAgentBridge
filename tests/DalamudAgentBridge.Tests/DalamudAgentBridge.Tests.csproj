@@ -27,5 +27,7 @@
     <ProjectReference Include="..\..\src\DalamudAgentBridge\DalamudAgentBridge.csproj" />
     <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NativeSlashCommandPolicy.cs"
              Link="NativeSlashCommandPolicy.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NavigationRequestPolicy.cs"
+             Link="NavigationRequestPolicy.cs" />
   </ItemGroup>
 </Project>

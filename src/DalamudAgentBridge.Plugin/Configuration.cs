@@ -9,6 +9,7 @@ public sealed class Configuration : IPluginConfiguration
     public int Version { get; set; } = 1;
     public string PluginInstanceId { get; set; } = Guid.NewGuid().ToString("N");
     public bool EnableScreenshots { get; set; }
+    public bool EnableNavigation { get; set; }
     public string AgentBridgeProtectedAccessToken { get; set; } = string.Empty;
 
     [NonSerialized]

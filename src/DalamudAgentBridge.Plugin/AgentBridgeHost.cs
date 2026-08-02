@@ -17,6 +17,10 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Configuration configuration;
     private readonly Func<Action, Task> dispatchOnFramework;
     private readonly Func<object> createSnapshot;
+    private readonly Func<object> createSituation;
+    private readonly Func<NavigationSnapshot> getNavigation;
+    private readonly Func<NavigationPointRequest, NavigationSubmissionResult> beginNavigation;
+    private readonly Func<string?, NavigationSubmissionResult> cancelNavigation;
     private readonly Func<object> createControlSurface;
     private readonly Func<string, AgentBridgeUiControlReview> reviewControl;
     private readonly Func<string, long, AgentBridgeUiControlInvocation> invokeControl;
@@ -52,6 +56,10 @@ public sealed class AgentBridgeHost : IDisposable
         string mainDllPath,
         Func<Action, Task> dispatchOnFramework,
         Func<object> createSnapshot,
+        Func<object> createSituation,
+        Func<NavigationSnapshot> getNavigation,
+        Func<NavigationPointRequest, NavigationSubmissionResult> beginNavigation,
+        Func<string?, NavigationSubmissionResult> cancelNavigation,
         Func<object> createControlSurface,
         Func<string, AgentBridgeUiControlReview> reviewControl,
         Func<string, long, AgentBridgeUiControlInvocation> invokeControl,
@@ -79,6 +87,10 @@ public sealed class AgentBridgeHost : IDisposable
         this.configuration = configuration;
         this.dispatchOnFramework = dispatchOnFramework;
         this.createSnapshot = createSnapshot;
+        this.createSituation = createSituation;
+        this.getNavigation = getNavigation;
+        this.beginNavigation = beginNavigation;
+        this.cancelNavigation = cancelNavigation;
         this.createControlSurface = createControlSurface;
         this.reviewControl = reviewControl;
         this.invokeControl = invokeControl;
@@ -132,6 +144,7 @@ public sealed class AgentBridgeHost : IDisposable
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
                 new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat", 2), new("chat-log"),
+                new("situation"), new("navigation"),
             ],
             surfaceRegistry.Snapshot(),
             getCaptureSurfaces(),
@@ -155,6 +168,7 @@ public sealed class AgentBridgeHost : IDisposable
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
             "cancel-capture-presentation", "capture-screen",
             "capture-plugin-surface",
+            "get-situation", "get-navigation", "navigate-to", "cancel-navigation",
             "send-chat", "get-chat-log",
         ];
         foreach (var command in commands)
@@ -169,6 +183,23 @@ public sealed class AgentBridgeHost : IDisposable
                 return AgentBridgeResponse.Ok("Snapshot captured.", await OnFrameworkAsync(createSnapshot).ConfigureAwait(false));
             case "get-client-snapshot":
                 return AgentBridgeResponse.Ok("Client snapshot captured.", await OnFrameworkAsync(createSnapshot).ConfigureAwait(false));
+            case "get-situation":
+                return AgentBridgeResponse.Ok("Current character situation captured.", await OnFrameworkAsync(createSituation).ConfigureAwait(false));
+            case "get-navigation":
+                return AgentBridgeResponse.Ok("Navigation state captured.", await OnFrameworkAsync(getNavigation).ConfigureAwait(false));
+            case "navigate-to":
+                var validation = NavigationRequestPolicy.Validate(request.Arguments);
+                if (!validation.Success || validation.Request is null)
+                    return new AgentBridgeResponse { Success = false, Message = validation.Message, Receipt = validation };
+                var navigation = await OnFrameworkAsync(() => beginNavigation(validation.Request)).ConfigureAwait(false);
+                return navigation.Success
+                    ? AgentBridgeResponse.Ok(navigation.Message, navigation, navigation.Navigation.OperationId)
+                    : new AgentBridgeResponse { Success = false, Message = navigation.Message, Receipt = navigation };
+            case "cancel-navigation":
+                var cancelled = await OnFrameworkAsync(() => cancelNavigation(request.OperationId)).ConfigureAwait(false);
+                return cancelled.Success
+                    ? AgentBridgeResponse.Ok(cancelled.Message, cancelled, cancelled.Navigation.OperationId)
+                    : new AgentBridgeResponse { Success = false, Message = cancelled.Message, Receipt = cancelled };
             case "get-control-surface":
                 return AgentBridgeResponse.Ok("Control surface captured.", await OnFrameworkAsync(createControlSurface).ConfigureAwait(false));
             case "get-review-surfaces":

@@ -11,6 +11,7 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 - [Install](#install)
 - [Run](#run)
 - [Safety boundary](#safety-boundary)
+- [Situation and navigation](#situation-and-navigation)
 - [Screenshot privacy](#screenshot-privacy)
 - [Frame-validated control](#frame-validated-control)
 - [Plugin lifecycle](#plugin-lifecycle)
@@ -52,7 +53,7 @@ https://raw.githubusercontent.com/FranFkntastic/DalamudPlugins/main/pluginmaster
 Install **Dalamud Agent Bridge** from the Plugin Installer, then use `/dab` or
 the plugin's configuration button to inspect the connector and configure
 optional screenshot handoff. Screenshot access remains disabled until enabled
-there.
+there; agent navigation is a separate permission and also defaults to disabled.
 
 Download the matching Windows utility or MCP bundle from
 [GitHub Releases](https://github.com/FranFkntastic/DalamudAgentBridge/releases).
@@ -109,7 +110,32 @@ derived from all four localized current `TextCommand` sheets are rejected, as ar
 every command referenced by the current `Emote` data; local-only `/echo` remains
 available.
 
+## Situation and navigation
+
+`bridge_situation` gives an agent one bounded, timestamped view of the current
+character: territory and map, world and map coordinates, resources and casting,
+active condition flags, target and focus target, party, the nearest 48 objects
+within 100 yalms, visible decision-oriented game UI, the newest 20 chat lines,
+and DAB-owned navigation progress. It uses public Dalamud observations and
+rendered addon text; raw addresses and arbitrary reflected game memory are not
+part of the schema.
+
+`bridge_navigate` accepts an exact current territory ID and finite world-space
+X/Y/Z coordinates, then delegates pathing to vnavmesh. DAB owns at most one
+request at a time, records its starting and best distance, deadline and last
+progress time, refuses unsafe client states or territory changes, and exposes
+status and guarded cancellation through `bridge_navigation` and
+`bridge_navigation_cancel`. The permission can only be enabled by the user in
+the in-game `/dab` window; an agent cannot turn it on through a reviewed action.
+
 ## Screenshot privacy
+
+`bridge_capture_clip` reuses the screenshot permission and encrypted handoff to
+sample 2-12 ordered full-viewport frames over at most 60 seconds. Every frame is
+paired with the contemporaneous situation snapshot, which lets an agent
+correlate visible geometry or loading failures with position, conditions, and
+vnavmesh progress. The result is a bounded diagnostic clip, not an indefinite
+stream or desktop capture.
 
 Screenshot capture is disabled by default and must be explicitly enabled from
 the connector's in-game `/dab` window. Plugin-surface capture requires a
