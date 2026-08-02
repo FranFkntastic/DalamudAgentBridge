@@ -148,7 +148,8 @@ public sealed class DiagnosticClipService
                 character is { } characterMaxGp ? Property(characterMaxGp, "maxGp") : null,
                 character is { } characterCurrentCp ? Property(characterCurrentCp, "currentCp") : null,
                 character is { } characterMaxCp ? Property(characterMaxCp, "maxCp") : null),
-            Property(situation, "navigation")), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Property(situation, "navigation"),
+            Property(situation, "specialists")), new JsonSerializerOptions(JsonSerializerDefaults.Web));
     }
 
     private sealed record DiagnosticClipSituation(
@@ -157,7 +158,8 @@ public sealed class DiagnosticClipService
         JsonElement? Available,
         DiagnosticClipLocation Location,
         DiagnosticClipResources Resources,
-        JsonElement? Navigation);
+        JsonElement? Navigation,
+        JsonElement? Specialists);
 
     private sealed record DiagnosticClipLocation(
         JsonElement? TerritoryType,

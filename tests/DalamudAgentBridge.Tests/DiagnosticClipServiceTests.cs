@@ -31,6 +31,7 @@ public sealed class DiagnosticClipServiceTests
               "x":1,"y":2,"z":3,"mapCoordinates":{"x":4,"y":5,"z":6,"future":"drop"},
               "currentHp":100,"maxHp":200,"statuses":[{"sourceId":77}]},
              "activeConditions":["Mounted"],"navigation":{"code":"PathRunning"},
+             "specialists":{"operation":{"code":"Running"},"gameplayLease":{"owner":"specialist"}},
              "nearbyObjects":[{"name":"noise"}],"recentChat":[{"message":"noise"}]}
             """);
 
@@ -46,6 +47,7 @@ public sealed class DiagnosticClipServiceTests
         Assert.DoesNotContain("Private World", sample.GetRawText());
         Assert.DoesNotContain("sourceId", sample.GetRawText());
         Assert.DoesNotContain("future", sample.GetRawText());
+        Assert.Equal("specialist", sample.GetProperty("specialists").GetProperty("gameplayLease").GetProperty("owner").GetString());
         Assert.False(sample.TryGetProperty("nearbyObjects", out _));
         Assert.False(sample.TryGetProperty("recentChat", out _));
     }
