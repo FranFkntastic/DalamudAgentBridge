@@ -40,7 +40,7 @@ public sealed class AgentBridgeTools
 
     [McpServerTool(Name = "bridge_health", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Check that a plugin bridge is reachable and return its exact loaded assembly identity and capability manifest. Read-only.")]
     public async Task<string> Health(
-        [Description("Plugin internal name, for example RQ or MarketMafioso.")] string plugin,
+        [Description("Plugin internal name, for example ExamplePlugin.")] string plugin,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
         [Description("Optional FFXIV process id when a profile has multiple clients.")] int? processId = null,
         CancellationToken cancellationToken = default) =>

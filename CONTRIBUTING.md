@@ -9,8 +9,11 @@ tests, and implementation pull requests are welcome.
 Open an issue before making a large protocol, security-boundary, or architecture
 change. Small fixes can go directly to a pull request.
 
-Clone [Franthropy](https://github.com/FranFkntastic/Franthropy) beside this
-repository because DAB consumes `Franthropy.Dalamud` as a source project:
+The utility, CLI, MCP server, and protocol tests build from this repository
+alone using the published `Franthropy.AgentBridge` package. Clone
+[Franthropy](https://github.com/FranFkntastic/Franthropy) beside this repository
+only when changing the in-game connector, which consumes the patch-sensitive
+`Franthropy.Dalamud` adapter as source:
 
 ```text
 FFXIV-Development/

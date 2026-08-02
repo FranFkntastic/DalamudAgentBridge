@@ -2,12 +2,12 @@
   "Author": "FranFkntastic",
   "Name": "Dalamud Agent Bridge",
   "Punchline": "Local agent control and inspection connector.",
-  "Description": "In-game connector for the loopback-only Dalamud Agent Bridge utility. Use /dab to inspect connector status.",
+  "Description": "In-game connector for the loopback-only Dalamud Agent Bridge utility. Use /dab to inspect status and configure optional permissions.",
   "InternalName": "DalamudAgentBridge",
-  "AssemblyVersion": "0.3.0.0",
+  "AssemblyVersion": "0.3.1.0",
   "DalamudApiLevel": 15,
   "ApplicableVersion": "any",
   "Tags": ["development", "diagnostics", "utility", "bridge"],
   "CategoryTags": ["utility"],
-  "IsTestingExclusive": true
+  "IsTestingExclusive": false
 }

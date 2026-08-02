@@ -1,5 +1,6 @@
 param(
     [switch]$NoBuild,
+    [switch]$BuildPluginRepository,
     [ValidatePattern('^[A-Za-z0-9._-]+$')]
     [string]$InstanceName = 'primary',
     [ValidateRange(1024, 65535)]
@@ -12,9 +13,15 @@ $project = Join-Path $PSScriptRoot 'src\DalamudAgentBridge\DalamudAgentBridge.cs
 $output = Join-Path $PSScriptRoot "artifacts\utility-$InstanceName"
 $bridgeDll = Join-Path $output 'DalamudAgentBridge.dll'
 
+if ($NoBuild -and $BuildPluginRepository) {
+    throw '-BuildPluginRepository cannot be combined with -NoBuild.'
+}
+
 if (-not $NoBuild) {
-    & (Join-Path $PSScriptRoot 'Build-PluginRepository.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'Plugin repository build failed.' }
+    if ($BuildPluginRepository) {
+        & (Join-Path $PSScriptRoot 'Build-PluginRepository.ps1')
+        if ($LASTEXITCODE -ne 0) { throw 'Plugin repository build failed.' }
+    }
     dotnet build $project -c Release -o $output
     if ($LASTEXITCODE -ne 0) { throw "Bridge utility build failed for instance '$InstanceName'." }
 }

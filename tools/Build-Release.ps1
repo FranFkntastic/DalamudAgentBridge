@@ -3,9 +3,7 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version,
 
-    [string]$FranthropyDalamudProject,
-
-    [string]$FranthropyAgentBridgeProject
+    [string]$FranthropyDalamudProject
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,9 +57,6 @@ $utilityPublishArguments = @(
     '-o', $utilityStaging,
     "-p:Version=$Version"
 )
-if ($FranthropyAgentBridgeProject) {
-    $utilityPublishArguments += "-p:FranthropyAgentBridgeProject=$FranthropyAgentBridgeProject"
-}
 dotnet @utilityPublishArguments
 if ($LASTEXITCODE -ne 0) { throw 'Utility publish failed.' }
 
@@ -74,9 +69,6 @@ $mcpPublishArguments = @(
     '-o', $mcpStaging,
     "-p:Version=$Version"
 )
-if ($FranthropyAgentBridgeProject) {
-    $mcpPublishArguments += "-p:FranthropyAgentBridgeProject=$FranthropyAgentBridgeProject"
-}
 dotnet @mcpPublishArguments
 if ($LASTEXITCODE -ne 0) { throw 'MCP publish failed.' }
 
