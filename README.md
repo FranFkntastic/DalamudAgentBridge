@@ -12,6 +12,7 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 - [Run](#run)
 - [Safety boundary](#safety-boundary)
 - [Situation and navigation](#situation-and-navigation)
+- [Specialist cockpit](#specialist-cockpit)
 - [Screenshot privacy](#screenshot-privacy)
 - [Frame-validated control](#frame-validated-control)
 - [Plugin lifecycle](#plugin-lifecycle)
@@ -53,7 +54,8 @@ https://raw.githubusercontent.com/FranFkntastic/DalamudPlugins/main/pluginmaster
 Install **Dalamud Agent Bridge** from the Plugin Installer, then use `/dab` or
 the plugin's configuration button to inspect the connector and configure
 optional screenshot handoff. Screenshot access remains disabled until enabled
-there; agent navigation is a separate permission and also defaults to disabled.
+there; agent navigation and specialist automation are separate permissions and
+also default to disabled.
 
 Download the matching Windows utility or MCP bundle from
 [GitHub Releases](https://github.com/FranFkntastic/DalamudAgentBridge/releases).
@@ -127,6 +129,33 @@ progress time, refuses unsafe client states or territory changes, and exposes
 status and guarded cancellation through `bridge_navigation` and
 `bridge_navigation_cancel`. The permission can only be enabled by the user in
 the in-game `/dab` window; an agent cannot turn it on through a reviewed action.
+
+## Specialist cockpit
+
+`bridge_specialists` discovers DAB's reviewed adapters for installed
+Questionable, AutoDuty, Henchman, and Lifestream versions. It reports each
+plugin's availability, compatibility and busy state together with typed
+capabilities, argument constraints, risk labels, and the current DAB-owned
+operation. Discovery and observation are read-only even when specialist
+automation is disabled.
+
+`bridge_specialist_start` accepts only a capability ID returned by that catalog
+and parameters declared by its schema. DAB does not expose arbitrary IPC names,
+reflection-based invocation, slash-command fallback, or plugin configuration
+mutation through this surface. The initial reviewed capabilities are one
+explicit Questionable quest, an explicit AutoDuty territory path, Henchman's
+published On A Boat and On Your Mark tasks, and typed Lifestream aethernet or
+world travel.
+
+Specialist automation has its own default-off permission in `/dab`. Every
+accepted request receives an operation ID, deadline, latest plugin observation,
+and terminal state. `bridge_specialist_cancel` can guard cancellation with that
+ID. Navigation and specialist operations share one DAB gameplay-control lease,
+so two agent-issued controllers are refused rather than allowed to fight;
+specialist work started outside DAB is reported as externally busy and is never
+stolen. Individual plugins still execute according to their existing user
+configuration and may perform consequential gameplay such as duties, quests,
+teleports, or world travel.
 
 ## Screenshot privacy
 

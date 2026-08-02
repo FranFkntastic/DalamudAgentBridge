@@ -190,6 +190,44 @@ public sealed class AgentBridgeTools
             operationId,
             cancellationToken).ConfigureAwait(false));
 
+    [McpServerTool(Name = "bridge_specialists", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Discover DAB's reviewed specialist-plugin adapters, exact installed versions, compatibility, busy state, typed capability arguments, risk labels, current operation, and shared gameplay-control owner. Read-only.")]
+    public async Task<string> Specialists(
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.GetSpecialistsAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "bridge_specialist_start", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Start one explicit reviewed specialist capability. Requires the separate in-game specialist permission, refuses unknown IPC and competing DAB gameplay ownership, and returns an observable operation id.")]
+    public async Task<string> StartSpecialist(
+        [Description("Capability id returned by bridge_specialists, such as questionable.single-quest.")] string capabilityId,
+        [Description("JSON object matching the capability's declared parameters. Use {} when it declares no parameters.")] string parametersJson = "{}",
+        [Description("Hard operation deadline in seconds, from 15 through 14400.")] int timeoutSeconds = 1800,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var document = JsonDocument.Parse(parametersJson);
+        if (document.RootElement.ValueKind is not JsonValueKind.Object)
+            throw new ArgumentException("parametersJson must be a JSON object.", nameof(parametersJson));
+        return Json(await client.StartSpecialistAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            new SpecialistStartRequest(capabilityId, document.RootElement.Clone(), timeoutSeconds),
+            cancellationToken).ConfigureAwait(false));
+    }
+
+    [McpServerTool(Name = "bridge_specialist_cancel", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false), Description("Cancel the specialist operation currently owned by DAB. An operation id can be supplied to prevent cancelling newer work.")]
+    public async Task<string> CancelSpecialist(
+        [Description("Optional operation id returned by bridge_specialist_start.")] string? operationId = null,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.CancelSpecialistAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            operationId,
+            cancellationToken).ConfigureAwait(false));
+
     [McpServerTool(Name = "bridge_wait", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Wait until a dot-path in the plugin snapshot exists or equals a value. This subscribes the caller to an observable completion condition instead of guessing with sleeps.")]
     public async Task<string> Wait(
         [Description("Plugin internal name.")] string plugin,

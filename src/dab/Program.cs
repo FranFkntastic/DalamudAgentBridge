@@ -39,6 +39,18 @@ try
         "health" => await client.GetHealthAsync(commandLine.Target(), cancellation.Token),
         "manifest" => await client.GetManifestAsync(commandLine.Target(), cancellation.Token),
         "snapshot" => await client.GetSnapshotAsync(commandLine.Target(), cancellation.Token),
+        "specialists" => await client.GetSpecialistsAsync(commandLine.ConnectorTarget(), cancellation.Token),
+        "specialist-start" => await client.StartSpecialistAsync(
+            commandLine.ConnectorTarget(),
+            new SpecialistStartRequest(
+                commandLine.Positional("capability id"),
+                commandLine.Json("arguments") ?? JsonSerializer.SerializeToElement(new { }),
+                commandLine.Int("timeout-seconds") ?? 1800),
+            cancellation.Token),
+        "specialist-cancel" => await client.CancelSpecialistAsync(
+            commandLine.ConnectorTarget(),
+            commandLine.Value("operation"),
+            cancellation.Token),
         "logs" => client.ReadLogs(commandLine.Target(), commandLine.Long("cursor"), commandLine.Int("limit")),
         "chat" => await client.ReadChatLogAsync(commandLine.Target(), commandLine.Long("cursor"), commandLine.Int("limit"), cancellation.Token),
         "wait" => await client.WaitForSnapshotAsync(
@@ -113,7 +125,7 @@ internal sealed class DabCommandLine
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             throw new ArgumentException(
-                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|health|manifest|snapshot|logs|chat|wait|act|deploy|install|capture> [plugin] [--profile primary] [options]");
+                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|health|manifest|snapshot|specialists|specialist-start|specialist-cancel|logs|chat|wait|act|deploy|install|capture> [plugin-or-capability] [--profile primary] [options]");
         var options = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var positionals = new List<string>();
         for (var index = 1; index < args.Length; index++)
@@ -139,6 +151,16 @@ internal sealed class DabCommandLine
         if (positionals.Count != 1)
             throw new ArgumentException($"Command '{Command}' requires exactly one plugin name.");
         return new BridgeTargetSelector(positionals[0], Value("profile") ?? "primary", Int("pid"));
+    }
+
+    public BridgeTargetSelector ConnectorTarget() =>
+        new("DalamudAgentBridge", Value("profile") ?? "primary", Int("pid"));
+
+    public string Positional(string label)
+    {
+        if (positionals.Count != 1)
+            throw new ArgumentException($"Command '{Command}' requires exactly one {label}.");
+        return positionals[0];
     }
 
     public string Plugin()

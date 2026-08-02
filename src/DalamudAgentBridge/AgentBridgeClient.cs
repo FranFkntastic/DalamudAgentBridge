@@ -111,6 +111,42 @@ public sealed class AgentBridgeClient
             new BridgeCommandRequest { OperationId = operationId },
             cancellationToken);
 
+    public async Task<JsonElement> GetSpecialistsAsync(BridgeTargetSelector selector, CancellationToken cancellationToken)
+    {
+        var response = await pipe.SendAsync(Resolve(selector), "get-specialists", null, cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Clone();
+    }
+
+    public Task<PluginBridgeResponse> StartSpecialistAsync(
+        BridgeTargetSelector selector,
+        SpecialistStartRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.CapabilityId);
+        var envelope = JsonSerializer.SerializeToElement(new
+        {
+            request.TimeoutSeconds,
+            Parameters = request.Parameters,
+        }, JsonOptions);
+        return pipe.SendAsync(
+            Resolve(selector),
+            "start-specialist",
+            new BridgeCommandRequest { Target = request.CapabilityId, Arguments = envelope },
+            cancellationToken);
+    }
+
+    public Task<PluginBridgeResponse> CancelSpecialistAsync(
+        BridgeTargetSelector selector,
+        string? operationId,
+        CancellationToken cancellationToken) =>
+        pipe.SendAsync(
+            Resolve(selector),
+            "cancel-specialist",
+            new BridgeCommandRequest { OperationId = operationId },
+            cancellationToken);
+
     public async Task<AgentBridgePluginSurfaceCatalog> GetPluginSurfaceCatalogAsync(
         string? targetPlugin,
         string? profile,

@@ -57,6 +57,15 @@ public sealed record NavigationTargetRequest(
     float ArrivalRadius = 1.5f,
     int TimeoutSeconds = 120);
 
+public sealed record SpecialistStartRequest(
+    string CapabilityId,
+    JsonElement Parameters,
+    int TimeoutSeconds = 1800);
+
+public sealed record SpecialistOperationHttpRequest(
+    JsonElement Parameters,
+    int TimeoutSeconds = 1800);
+
 public sealed record DiagnosticClipRequest(
     int FrameCount = 6,
     int IntervalMilliseconds = 1000);

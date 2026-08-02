@@ -8,6 +8,7 @@ param(
         'list-plugins',
         'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin',
         'get-situation', 'get-navigation', 'navigate-to', 'cancel-navigation',
+        'get-specialists', 'start-specialist', 'cancel-specialist',
         'send-chat', 'get-chat-log')]
     [string]$Command = 'hello',
     [string]$Target,

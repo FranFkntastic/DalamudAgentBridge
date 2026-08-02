@@ -79,6 +79,7 @@ public sealed class NavigationCoordinator : IDisposable
     private readonly ICondition condition;
     private readonly INavigationTravel vnavmesh;
     private readonly Func<DateTimeOffset> utcNow;
+    private readonly GameplayControlLease gameplayLease;
     private ActiveNavigation? active;
     private NavigationSnapshot? last;
     private bool permissionRevocationRequested;
@@ -88,8 +89,9 @@ public sealed class NavigationCoordinator : IDisposable
         IClientState clientState,
         IObjectTable objectTable,
         ICondition condition,
-        DalamudVNavmeshTravel vnavmesh)
-        : this(framework, clientState, objectTable, condition, new VnavmeshNavigationTravel(vnavmesh), () => DateTimeOffset.UtcNow)
+        DalamudVNavmeshTravel vnavmesh,
+        GameplayControlLease gameplayLease)
+        : this(framework, clientState, objectTable, condition, new VnavmeshNavigationTravel(vnavmesh), gameplayLease, () => DateTimeOffset.UtcNow)
     {
     }
 
@@ -99,6 +101,7 @@ public sealed class NavigationCoordinator : IDisposable
         IObjectTable objectTable,
         ICondition condition,
         INavigationTravel vnavmesh,
+        GameplayControlLease gameplayLease,
         Func<DateTimeOffset> utcNow)
     {
         this.framework = framework;
@@ -106,6 +109,7 @@ public sealed class NavigationCoordinator : IDisposable
         this.objectTable = objectTable;
         this.condition = condition;
         this.vnavmesh = vnavmesh;
+        this.gameplayLease = gameplayLease;
         this.utcNow = utcNow;
         framework.Update += OnFrameworkUpdate;
     }
@@ -135,13 +139,20 @@ public sealed class NavigationCoordinator : IDisposable
             return new NavigationSubmissionResult(true, last.Code, last.Message, last);
         }
 
+        var operationId = Guid.NewGuid().ToString("N");
+        if (!gameplayLease.TryAcquire(operationId, "navigation", "navigate-to", out var owner))
+            return Reject("GameplayControlOwned", $"Gameplay control is owned by {owner.Owner} operation {owner.OperationId}.");
+
         var submission = vnavmesh.TryMoveCloseTo(destination, request.ArrivalRadius);
         if (!submission.Submitted)
+        {
+            gameplayLease.Release(operationId);
             return Reject(submission.Code, submission.Message);
+        }
 
         var now = utcNow();
         active = new ActiveNavigation(
-            Guid.NewGuid().ToString("N"), request, destination, now, now.AddSeconds(request.TimeoutSeconds),
+            operationId, request, destination, now, now.AddSeconds(request.TimeoutSeconds),
             distance, distance, now);
         permissionRevocationRequested = false;
         last = Snapshot(active, AgentBridgeOperationState.Running, "PathRunning", "vnavmesh accepted the destination and DAB is observing progress.", distance);
@@ -188,7 +199,10 @@ public sealed class NavigationCoordinator : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
         if (active is not null)
+        {
             vnavmesh.TryStop();
+            gameplayLease.Release(active.OperationId);
+        }
         active = null;
     }
 
@@ -332,6 +346,7 @@ public sealed class NavigationCoordinator : IDisposable
     private void Complete(ActiveNavigation current, AgentBridgeOperationState state, string code, string message, float? distance)
     {
         last = Snapshot(current, state, code, message, distance);
+        gameplayLease.Release(current.OperationId);
         active = null;
         permissionRevocationRequested = false;
     }

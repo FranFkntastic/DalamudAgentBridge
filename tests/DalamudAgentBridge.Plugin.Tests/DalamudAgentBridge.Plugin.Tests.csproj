@@ -34,5 +34,13 @@
              Link="NavigationRequestPolicy.cs" />
     <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NavigationCoordinator.cs"
              Link="NavigationCoordinator.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\GameplayControlLease.cs"
+             Link="GameplayControlLease.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\SpecialistOperationModels.cs"
+             Link="SpecialistOperationModels.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\SpecialistRequestPolicy.cs"
+             Link="SpecialistRequestPolicy.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\SpecialistOperationCoordinator.cs"
+             Link="SpecialistOperationCoordinator.cs" />
   </ItemGroup>
 </Project>

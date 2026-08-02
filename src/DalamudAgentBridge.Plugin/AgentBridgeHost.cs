@@ -21,6 +21,9 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<NavigationSnapshot> getNavigation;
     private readonly Func<NavigationPointRequest, NavigationSubmissionResult> beginNavigation;
     private readonly Func<string?, NavigationSubmissionResult> cancelNavigation;
+    private readonly Func<SpecialistCatalogSnapshot> getSpecialists;
+    private readonly Func<string, JsonElement?, SpecialistSubmissionResult> beginSpecialist;
+    private readonly Func<string?, SpecialistSubmissionResult> cancelSpecialist;
     private readonly Func<object> createControlSurface;
     private readonly Func<string, AgentBridgeUiControlReview> reviewControl;
     private readonly Func<string, long, AgentBridgeUiControlInvocation> invokeControl;
@@ -60,6 +63,9 @@ public sealed class AgentBridgeHost : IDisposable
         Func<NavigationSnapshot> getNavigation,
         Func<NavigationPointRequest, NavigationSubmissionResult> beginNavigation,
         Func<string?, NavigationSubmissionResult> cancelNavigation,
+        Func<SpecialistCatalogSnapshot> getSpecialists,
+        Func<string, JsonElement?, SpecialistSubmissionResult> beginSpecialist,
+        Func<string?, SpecialistSubmissionResult> cancelSpecialist,
         Func<object> createControlSurface,
         Func<string, AgentBridgeUiControlReview> reviewControl,
         Func<string, long, AgentBridgeUiControlInvocation> invokeControl,
@@ -91,6 +97,9 @@ public sealed class AgentBridgeHost : IDisposable
         this.getNavigation = getNavigation;
         this.beginNavigation = beginNavigation;
         this.cancelNavigation = cancelNavigation;
+        this.getSpecialists = getSpecialists;
+        this.beginSpecialist = beginSpecialist;
+        this.cancelSpecialist = cancelSpecialist;
         this.createControlSurface = createControlSurface;
         this.reviewControl = reviewControl;
         this.invokeControl = invokeControl;
@@ -144,7 +153,7 @@ public sealed class AgentBridgeHost : IDisposable
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
                 new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat", 2), new("chat-log"),
-                new("situation"), new("navigation"),
+                new("situation", 2), new("navigation"), new("specialist-cockpit"),
             ],
             surfaceRegistry.Snapshot(),
             getCaptureSurfaces(),
@@ -169,6 +178,7 @@ public sealed class AgentBridgeHost : IDisposable
             "cancel-capture-presentation", "capture-screen",
             "capture-plugin-surface",
             "get-situation", "get-navigation", "navigate-to", "cancel-navigation",
+            "get-specialists", "start-specialist", "cancel-specialist",
             "send-chat", "get-chat-log",
         ];
         foreach (var command in commands)
@@ -200,6 +210,20 @@ public sealed class AgentBridgeHost : IDisposable
                 return cancelled.Success
                     ? AgentBridgeResponse.Ok(cancelled.Message, cancelled, cancelled.Navigation.OperationId)
                     : new AgentBridgeResponse { Success = false, Message = cancelled.Message, Receipt = cancelled };
+            case "get-specialists":
+                return AgentBridgeResponse.Ok("Specialist capability catalog captured.", await OnFrameworkAsync(getSpecialists).ConfigureAwait(false));
+            case "start-specialist":
+                if (string.IsNullOrWhiteSpace(request.Target))
+                    return AgentBridgeResponse.Fail("A reviewed specialist capability id is required.");
+                var specialist = await OnFrameworkAsync(() => beginSpecialist(request.Target, request.Arguments)).ConfigureAwait(false);
+                return specialist.Success
+                    ? AgentBridgeResponse.Ok(specialist.Message, specialist, specialist.Operation.OperationId)
+                    : new AgentBridgeResponse { Success = false, Message = specialist.Message, Receipt = specialist };
+            case "cancel-specialist":
+                var specialistCancelled = await OnFrameworkAsync(() => cancelSpecialist(request.OperationId)).ConfigureAwait(false);
+                return specialistCancelled.Success
+                    ? AgentBridgeResponse.Ok(specialistCancelled.Message, specialistCancelled, specialistCancelled.Operation.OperationId)
+                    : new AgentBridgeResponse { Success = false, Message = specialistCancelled.Message, Receipt = specialistCancelled };
             case "get-control-surface":
                 return AgentBridgeResponse.Ok("Control surface captured.", await OnFrameworkAsync(createControlSurface).ConfigureAwait(false));
             case "get-review-surfaces":
