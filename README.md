@@ -8,6 +8,7 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 ## Contents
 
 - [Prerequisites](#prerequisites)
+- [Install](#install)
 - [Run](#run)
 - [Safety boundary](#safety-boundary)
 - [Screenshot privacy](#screenshot-privacy)
@@ -21,11 +22,13 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 ## Prerequisites
 
 - Windows 10 version 1809 or newer.
-- The .NET 8 and .NET 10 SDKs.
-- A development Dalamud installation.
-- A sibling checkout of [Franthropy](https://github.com/FranFkntastic/Franthropy).
+- The .NET 8 SDK for the utility, CLI, and MCP server.
+- The .NET 10 SDK is additionally required for connector development.
+- A development Dalamud installation and sibling checkout of
+  [Franthropy](https://github.com/FranFkntastic/Franthropy) are needed only
+  when building the in-game connector from source.
 
-The default build expects this layout:
+Connector development expects this layout:
 
 ```text
 FFXIV-Development/
@@ -34,6 +37,27 @@ FFXIV-Development/
 ```
 
 Set `FranthropyDalamudProject` at build time if the repositories live elsewhere.
+The utility, CLI, MCP server, and their tests consume the published
+`Franthropy.AgentBridge` package and build from a standalone DAB checkout.
+
+## Install
+
+Add the FranFkntastic custom repository URL under Dalamud Settings →
+Experimental → Custom Plugin Repositories:
+
+```text
+https://raw.githubusercontent.com/FranFkntastic/DalamudPlugins/main/pluginmaster.json
+```
+
+Install **Dalamud Agent Bridge** from the Plugin Installer, then use `/dab` or
+the plugin's configuration button to inspect the connector and configure
+optional screenshot handoff. Screenshot access remains disabled until enabled
+there.
+
+Download the matching Windows utility or MCP bundle from
+[GitHub Releases](https://github.com/FranFkntastic/DalamudAgentBridge/releases).
+The in-game connector discovers the local utility through its authenticated
+current-user bridge; no port, token, or consumer-plugin configuration is required.
 
 ## Run
 
@@ -53,7 +77,8 @@ XIVLauncher profile:
 .\Run-Bridge.ps1 -InstanceName secondary -Port 45832 -PluginConfigRoot "C:\path\to\profile\pluginConfigs"
 ```
 
-The normal build also creates a private, loopback-only Dalamud repository at
+Pass `-BuildPluginRepository` when developing the connector to also create a
+private, loopback-only Dalamud repository at
 `http://127.0.0.1:45831/repository/repo.json`. Add that URL under Dalamud
 Settings → Experimental → Custom Plugin Repositories. The repository contains
 your locally built plugin package and does not require a GitHub token.
@@ -68,7 +93,9 @@ your locally built plugin package and does not require a GitHub token.
 - Game agents, client state, packets, and plugin IPC may supply capability and diagnostics, but rendered identity/confirmation plus the final plugin snapshot remain required at consequential boundaries. A disagreement must fail closed instead of silently choosing one source.
 - Plugin lifecycle actions address an exact installed-plugin internal name, refuse to manage the bridge itself, and verify the resulting Dalamud state before returning.
 - Local-build replacement validates the source manifest and optional DLL hash, backs up the installed files, and rolls back if replacement or reload fails.
-- MMF currently exposes state/window/tab control, proof capture, input diagnostics, and route stop. It does not expose route start or purchase commands.
+- Unsupported plugins expose only read-only inventory and reversible window
+  presentation. Mutating actions remain limited to explicitly declared,
+  frame-reviewed semantic controls.
 
 The in-game connector also supports `get-login-ui` and `begin-login` on its authenticated named pipe. Use `tools/Invoke-InGameBridge.ps1`; a login target is written as `Character Name@Home World`, and success means only that Lifestream accepted the work. The caller must still prove the rendered character selection and the eventual logged-in character/world/build.
 
@@ -84,10 +111,10 @@ available.
 
 ## Screenshot privacy
 
-Screenshot capture is disabled by default in MMF and must be explicitly enabled
-in that plugin's local configuration. A capture fails closed unless MMF itself
-is currently rendered, and only its current window rectangle is captured—not
-the full game viewport.
+Screenshot capture is disabled by default and must be explicitly enabled from
+the connector's in-game `/dab` window. Plugin-surface capture requires a
+short-lived presentation transaction and captures only the presented plugin
+window—not the full desktop.
 
 The plugin encodes the crop in memory, protects the short handoff with Windows DPAPI for the current user, and never writes plaintext PNGs or sidecar metadata. The utility verifies the handoff, immediately deletes it, then stores both the image and its review metadata as separate DPAPI-encrypted files under the current user's local application-data directory. By default a review capture expires after 30 minutes; the authenticated local dashboard decrypts it only in memory for browser delivery. It can be cleared immediately from the dashboard. Browser delivery uses no-store headers and a Blob URL that is revoked when replaced or closed.
 

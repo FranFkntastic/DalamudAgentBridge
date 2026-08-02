@@ -354,13 +354,16 @@ public sealed class Plugin : IDalamudPlugin
 
         ImGui.TextUnformatted("Agent Bridge Connector");
         ImGui.Separator();
-        ImGui.TextWrapped("This private experimental plugin is the in-game connector for the loopback-only bridge utility. It does not expose a network listener or credentials.");
+        ImGui.TextWrapped("This is the in-game connector for the loopback-only Dalamud Agent Bridge utility. It does not expose a network listener or credentials.");
         ImGui.Spacing();
         DrawRow("Process", Environment.ProcessId.ToString());
         DrawRow("Character", playerState.CharacterName ?? "Unavailable");
         DrawRow("World", playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable");
         DrawRow("Bridge", "Authenticated local named pipe (current user)");
         DrawRow("Screenshots", configuration.EnableScreenshots ? "Enabled — encrypted one-time handoff" : "Disabled");
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Permissions");
+        ImGui.Separator();
         var screenshotsEnabled = configuration.EnableScreenshots;
         if (ImGui.Checkbox("Allow screenshot handoff to the local bridge utility", ref screenshotsEnabled))
         {

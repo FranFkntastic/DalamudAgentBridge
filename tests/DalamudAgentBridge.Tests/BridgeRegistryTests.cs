@@ -37,7 +37,7 @@ public sealed class BridgeRegistryTests : IDisposable
             ProcessId = Environment.ProcessId,
             PluginInstanceId = "instance",
             RuntimeInstanceId = "runtime",
-            PluginInternalName = "Quartermaster",
+            PluginInternalName = "ExamplePlugin",
             ProfileId = "profile-primary",
             ProfileAlias = "primary",
             ProtocolVersion = 2,
@@ -46,10 +46,10 @@ public sealed class BridgeRegistryTests : IDisposable
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Bridge:PluginConfigRoot"] = profileRoot })
             .Build();
 
-        var instance = new BridgeRegistry(configuration).Resolve(new BridgeTargetSelector("Quartermaster", "primary"));
+        var instance = new BridgeRegistry(configuration).Resolve(new BridgeTargetSelector("ExamplePlugin", "primary"));
 
         Assert.Equal("Friendly Directory", instance.PluginName);
-        Assert.Equal("Quartermaster", instance.PluginInternalName);
+        Assert.Equal("ExamplePlugin", instance.PluginInternalName);
         Assert.Equal("profile-primary", instance.ProfileId);
         Assert.Equal(2, instance.ProtocolVersion);
     }

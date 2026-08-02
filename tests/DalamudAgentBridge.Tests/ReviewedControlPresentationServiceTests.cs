@@ -18,7 +18,7 @@ public sealed class ReviewedControlPresentationServiceTests
                 surfacePresented = true;
             object? receipt = command switch
             {
-                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "select-main-tab", "Squire", 1) },
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("example", "Example Plugin", "select-main-tab", "Example Plugin", 1) },
                 "get-control" when surfacePresented => new AgentBridgeUiControlReview(
                     42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(3),
                     new AgentBridgeUiControl(request!.Target!, "Control", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, "Ready")),
@@ -34,14 +34,14 @@ public sealed class ReviewedControlPresentationServiceTests
 
         var receipt = await service.PresentAsync(CreateInstance(), new ReviewedControlPresentationRequest
         {
-            SurfaceId = "squire",
+            SurfaceId = "example",
             ControlIds = ["first", "second"],
         }, CancellationToken.None);
 
         Assert.Equal(42, receipt.FrameId);
         Assert.Equal(["first", "second"], receipt.Controls.Select(control => control.Id));
         Assert.Contains("open-main-window:", commands);
-        Assert.Contains("select-main-tab:Squire", commands);
+        Assert.Contains("select-main-tab:Example Plugin", commands);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class ReviewedControlPresentationServiceTests
                 surfacePresented = true;
             object? receipt = command switch
             {
-                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "select-main-tab", "Squire", 1) },
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("example", "Example Plugin", "select-main-tab", "Example Plugin", 1) },
                 "get-control" when surfacePresented => new AgentBridgeUiControlReview(
                     42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(3),
                     new AgentBridgeUiControl(request!.Target!, "Control", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, "Ready")),
@@ -72,12 +72,12 @@ public sealed class ReviewedControlPresentationServiceTests
 
         var receipt = await service.PresentAndInvokeAsync(CreateInstance(), new ReviewedControlActionRequest
         {
-            SurfaceId = "squire",
-            ControlId = "squire.refresh",
+            SurfaceId = "example",
+            ControlId = "example.refresh",
         }, CancellationToken.None);
 
         Assert.True(receipt.Invocation.Success);
-        Assert.Contains("invoke-control:squire.refresh:42", commands);
+        Assert.Contains("invoke-control:example.refresh:42", commands);
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public sealed class ReviewedControlPresentationServiceTests
             commands.Add(command);
             object? receipt = command switch
             {
-                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "open-main-window", "squire", 1) },
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("example", "Example Plugin", "open-main-window", "example", 1) },
                 "review-control" => new AgentBridgeUiControlReview(
                     42,
                     DateTimeOffset.UtcNow,
@@ -107,8 +107,8 @@ public sealed class ReviewedControlPresentationServiceTests
 
         var receipt = await service.PresentAndInvokeAsync(CreateInstance(), new ReviewedControlActionRequest
         {
-            SurfaceId = "squire",
-            ControlId = "squire.refresh",
+            SurfaceId = "example",
+            ControlId = "example.refresh",
         }, CancellationToken.None);
 
         Assert.True(receipt.Invocation.Success);
@@ -128,7 +128,7 @@ public sealed class ReviewedControlPresentationServiceTests
                 surfacePresented = true;
             object? receipt = command switch
             {
-                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "select-main-tab", "Squire", 1) },
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("example", "Example Plugin", "select-main-tab", "Example Plugin", 1) },
                 "get-control" when surfacePresented => new AgentBridgeUiControlReview(
                     42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(3),
                     new AgentBridgeUiControl(request!.Target!, "Control", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, "Ready")),
@@ -141,7 +141,7 @@ public sealed class ReviewedControlPresentationServiceTests
                 Receipt = receipt == null ? null : JsonSerializer.SerializeToElement(receipt),
             });
         });
-        var request = new ReviewedControlPresentationRequest { SurfaceId = "squire", ControlIds = ["squire.refresh"] };
+        var request = new ReviewedControlPresentationRequest { SurfaceId = "example", ControlIds = ["example.refresh"] };
 
         await service.PresentAsync(CreateInstance(), request, CancellationToken.None);
         await service.PresentAsync(CreateInstance(), request, CancellationToken.None);
@@ -159,7 +159,7 @@ public sealed class ReviewedControlPresentationServiceTests
         {
             object? receipt = command switch
             {
-                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("squire", "Squire", "open-main-window", "squire", 1) },
+                "get-review-surfaces" => new[] { new AgentBridgeReviewSurfaceDescriptor("example", "Example Plugin", "open-main-window", "example", 1) },
                 "get-control" => new AgentBridgeUiControlReview(
                     7,
                     renderedAt,
@@ -179,8 +179,8 @@ public sealed class ReviewedControlPresentationServiceTests
             CreateInstance(),
             new ReviewedControlPresentationRequest
             {
-                SurfaceId = "squire",
-                ControlIds = ["squire.refresh"],
+                SurfaceId = "example",
+                ControlIds = ["example.refresh"],
                 TimeoutMilliseconds = 250,
             },
             CancellationToken.None));
@@ -234,7 +234,7 @@ public sealed class ReviewedControlPresentationServiceTests
         {
             object? receipt = command switch
             {
-                "get-manifest" => CreateManifest(7, "squire", "squire.refresh"),
+                "get-manifest" => CreateManifest(7, "example", "example.refresh"),
                 "get-control" => new AgentBridgeUiControlReview(
                     42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(3),
                     new AgentBridgeUiControl(request!.Target!, "Refresh", AgentBridgeUiControlKind.Button, 0, 0, 1, 1, true, false, "Ready")),
@@ -250,10 +250,10 @@ public sealed class ReviewedControlPresentationServiceTests
 
         var result = await service.PresentAndInvokeAsync(CreateInstance(), new ReviewedControlActionRequest
         {
-            ControlId = "squire.refresh",
+            ControlId = "example.refresh",
         }, CancellationToken.None);
 
-        Assert.Equal("squire", result.Presentation.SurfaceId);
+        Assert.Equal("example", result.Presentation.SurfaceId);
         Assert.True(result.Invocation.Success);
     }
 
@@ -281,9 +281,9 @@ public sealed class ReviewedControlPresentationServiceTests
 
     private static BridgeInstance CreateInstance() => new()
     {
-        Id = "MarketMafioso-1",
-        PluginName = "MarketMafioso",
-        PluginInternalName = "MarketMafioso",
+        Id = "ExamplePlugin-1",
+        PluginName = "ExamplePlugin",
+        PluginInternalName = "ExamplePlugin",
         PipeName = "pipe",
         ProcessId = 1,
         SchemaVersion = 1,

@@ -36,6 +36,22 @@ The tag workflow creates a draft—not a public incomplete release—because a
 GitHub-hosted runner does not have the maintainer's current Dalamud development
 installation needed to compile the connector.
 
+## PluginMaster publication
+
+Publish the complete GitHub release before changing PluginMaster. Add or update
+the `DalamudAgentBridge` entry in
+`https://github.com/FranFkntastic/DalamudPlugins` with an `AssemblyVersion`
+matching the connector manifest and immutable install, testing, and update URLs
+of this form:
+
+```text
+https://github.com/FranFkntastic/DalamudAgentBridge/releases/download/v0.3.1/DalamudAgentBridge-plugin.zip
+```
+
+Verify the URL returns the released archive and that its SHA-256 equals the
+entry in `SHA256SUMS.txt` before merging the PluginMaster change. Never point
+PluginMaster at a draft release or a moving branch URL.
+
 Tag only a commit on `main`. The tag version must match the plugin version and
 manifest assembly version. Release notes must call out changes to protocol,
 capability, action, snapshot, or safety behavior.
