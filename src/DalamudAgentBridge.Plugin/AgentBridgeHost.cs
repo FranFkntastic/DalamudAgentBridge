@@ -42,6 +42,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, CancellationToken, Task<object>> installPlugin;
     private readonly Func<string, CancellationToken, Task<object>> installDevPlugin;
     private readonly Func<object> createLoginSnapshot;
+    private readonly Func<object> createCharacterProvisioningSnapshot;
     private readonly Func<string, LifestreamLoginSubmissionResult> beginLogin;
     private readonly Func<string, SlashCommandSubmission> sendChatLine;
     private readonly Func<long?, int?, ChatLogRead> readChatLog;
@@ -84,6 +85,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, CancellationToken, Task<object>> installPlugin,
         Func<string, CancellationToken, Task<object>> installDevPlugin,
         Func<object> createLoginSnapshot,
+        Func<object> createCharacterProvisioningSnapshot,
         Func<string, LifestreamLoginSubmissionResult> beginLogin,
         Func<IReadOnlyList<AgentBridgeActionDescriptor>> getActionCatalog,
         Func<long> getActionCatalogRevision,
@@ -118,6 +120,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.installPlugin = installPlugin;
         this.installDevPlugin = installDevPlugin;
         this.createLoginSnapshot = createLoginSnapshot;
+        this.createCharacterProvisioningSnapshot = createCharacterProvisioningSnapshot;
         this.beginLogin = beginLogin;
         this.getActionCatalog = getActionCatalog;
         this.getActionCatalogRevision = getActionCatalogRevision;
@@ -152,7 +155,7 @@ public sealed class AgentBridgeHost : IDisposable
             "DalamudAgentBridge.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
-                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat", 2), new("chat-log"),
+                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
                 new("situation", 2), new("navigation"), new("specialist-cockpit"),
             ],
             surfaceRegistry.Snapshot(),
@@ -171,7 +174,7 @@ public sealed class AgentBridgeHost : IDisposable
         string[] commands =
         [
             "get-snapshot", "get-client-snapshot", "get-control-surface", "get-control", "invoke-control", "get-review-surfaces",
-            "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "begin-login", "list-plugins",
+            "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "get-character-provisioning", "begin-login", "list-plugins",
             "get-plugin-surfaces",
             "begin-plugin-surface-presentation", "restore-plugin-surface-presentation",
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
@@ -280,6 +283,8 @@ public sealed class AgentBridgeHost : IDisposable
                 return AgentBridgeResponse.Ok("Capture surfaces captured.", getCaptureSurfaces());
             case "get-login-ui":
                 return AgentBridgeResponse.Ok("Rendered title and login UI captured without requiring a local player.", await OnFrameworkAsync(createLoginSnapshot).ConfigureAwait(false));
+            case "get-character-provisioning":
+                return AgentBridgeResponse.Ok("Rendered character-provisioning state captured without mutating the client.", await OnFrameworkAsync(createCharacterProvisioningSnapshot).ConfigureAwait(false));
             case "begin-login":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A Character Name@Home World target is required.");
                 var login = await OnFrameworkAsync(() => beginLogin(request.Target)).ConfigureAwait(false);

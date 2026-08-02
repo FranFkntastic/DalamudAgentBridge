@@ -10,6 +10,7 @@ using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using Franthropy.Dalamud.AgentBridge;
+using Franthropy.Dalamud.Automation.Characters;
 using Franthropy.Dalamud.Travel;
 using Franthropy.Dalamud.Observations;
 using Lumina.Excel.Sheets;
@@ -156,6 +157,7 @@ public sealed class Plugin : IDalamudPlugin
             async (internalName, cancellationToken) =>
                 await pluginDevInstall.InstallDevAsync(internalName, cancellationToken).ConfigureAwait(false),
             CreateLoginSnapshot,
+            CreateCharacterProvisioningSnapshot,
             BeginLogin,
             reviewRegistry.ActionCatalog,
             () => reviewRegistry.CatalogRevision,
@@ -481,7 +483,7 @@ public sealed class Plugin : IDalamudPlugin
         bridgeWindowOpen = WindowOpen,
         client = CreateClientSnapshot(),
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "get-specialists", "start-specialist", "cancel-specialist", "send-chat", "get-chat-log" },
+        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "get-character-provisioning", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "get-specialists", "start-specialist", "cancel-specialist", "send-chat", "get-chat-log" },
         screenshotsEnabled = configuration.EnableScreenshots,
         navigationEnabled = configuration.EnableNavigation,
         specialistAutomationEnabled = configuration.EnableSpecialistAutomation,
@@ -500,6 +502,52 @@ public sealed class Plugin : IDalamudPlugin
             capturedAtUtc = DateTimeOffset.UtcNow,
             playerAvailable = !string.IsNullOrWhiteSpace(playerState.CharacterName),
             addons = addonNames.Select(renderedTextActions.CaptureVisibleText).ToArray(),
+            provenance = "RenderedAddon",
+        };
+    }
+
+    private object CreateCharacterProvisioningSnapshot()
+    {
+        string[] addonNames =
+        [
+            "_TitleMenu",
+            "_CharaSelectWorldServer",
+            "_CharaSelectListMenu",
+            "_CharaSelectReturn",
+            "_CharaMakeRaceGender",
+            "_CharaMakeTribe",
+            "_CharaMakeFeature",
+            "_CharaMakeBirthDay",
+            "_CharaMakeGuardian",
+            "_CharaMakeClassSelector",
+            "_CharaMakeWorldServer",
+            "_CharaMakeCharaName",
+            "_CharaMakeNotice",
+            "_CharaMakeProgress",
+            "CharaMakeSelectYesNo",
+            "_CharaMakeSelectYesNo",
+            "SelectYesno",
+            "SelectOk",
+            "_TextError",
+            "NowLoading",
+        ];
+        var addons = addonNames.Select(renderedTextActions.CaptureVisibleText).ToArray();
+        var playerAvailable = !string.IsNullOrWhiteSpace(playerState.CharacterName);
+        var gameVersion = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion();
+        var stage = CharacterCreationStageDetector.Detect(
+            addons.Where(value => value.Available).Select(value => value.AddonName),
+            playerAvailable,
+            gameVersion,
+            CharacterProvisioningDefaults.ApprovedGameVersion);
+        return new
+        {
+            schemaVersion = CharacterProvisioningDefaults.SchemaVersion,
+            capturedAtUtc = DateTimeOffset.UtcNow,
+            gameVersion,
+            approvedGameVersion = CharacterProvisioningDefaults.ApprovedGameVersion,
+            playerAvailable,
+            stage,
+            addons,
             provenance = "RenderedAddon",
         };
     }

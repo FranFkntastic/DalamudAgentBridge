@@ -85,6 +85,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "open-acquisition-diagnostics",
     "begin-login",
     "get-login-ui",
+    "get-character-provisioning",
     "select-main-tab",
     "capture-input-state",
     "stop-route",

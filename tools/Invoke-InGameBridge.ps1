@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet(
-        'hello', 'get-manifest', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'begin-login',
+        'hello', 'get-manifest', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'get-character-provisioning', 'begin-login',
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',
         'open-main-window', 'close-main-window', 'select-main-tab',
