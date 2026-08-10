@@ -122,6 +122,12 @@ public sealed class AgentBridgeClient
     public Task<PluginBridgeResponse> StartSpecialistAsync(
         BridgeTargetSelector selector,
         SpecialistStartRequest request,
+        CancellationToken cancellationToken) =>
+        StartSpecialistAsync(Resolve(selector), request, cancellationToken);
+
+    public Task<PluginBridgeResponse> StartSpecialistAsync(
+        BridgeInstance instance,
+        SpecialistStartRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.CapabilityId);
@@ -131,7 +137,7 @@ public sealed class AgentBridgeClient
             Parameters = request.Parameters,
         }, JsonOptions);
         return pipe.SendAsync(
-            Resolve(selector),
+            instance,
             "start-specialist",
             new BridgeCommandRequest { Target = request.CapabilityId, Arguments = envelope },
             cancellationToken);

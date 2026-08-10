@@ -159,23 +159,17 @@ app.MapPost("/api/bridges/{id}/specialists/{capabilityId}", async (
     string capabilityId,
     SpecialistOperationHttpRequest request,
     BridgeRegistry registry,
-    NamedPipeBridgeClient pipe,
+    AgentBridgeClient client,
     CancellationToken cancellationToken) =>
 {
     var instance = registry.Find(id);
     if (instance == null)
         return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
-    var envelope = JsonSerializer.SerializeToElement(new
-    {
-        request.TimeoutSeconds,
-        Parameters = request.Parameters,
-    });
     try
     {
-        var response = await pipe.SendAsync(
+        var response = await client.StartSpecialistAsync(
             instance,
-            "start-specialist",
-            new BridgeCommandRequest { Target = capabilityId, Arguments = envelope },
+            new SpecialistStartRequest(capabilityId, request.Parameters, request.TimeoutSeconds),
             cancellationToken).ConfigureAwait(false);
         return response.Success ? Results.Ok(response) : Results.BadRequest(response);
     }

@@ -171,15 +171,10 @@ public sealed class SpecialistOperationCoordinator : IDisposable
             {
                 Finish(
                     current,
-                    AgentBridgeOperationState.Cancelled,
+                    current.CancellationState,
                     current.CancellationCode ?? "Cancelled",
                     current.CancellationMessage ?? "Specialist operation was cancelled.",
                     observation);
-                return;
-            }
-            if (now >= current.DeadlineUtc)
-            {
-                Finish(current, AgentBridgeOperationState.Failed, "CancellationTimedOut", "The specialist remained busy through its operation deadline after cancellation.", observation);
                 return;
             }
             last = Snapshot(current, AgentBridgeOperationState.Running, "CancellationPending", "Cancellation was accepted; DAB is waiting for the plugin to become idle.", observation);
@@ -188,13 +183,17 @@ public sealed class SpecialistOperationCoordinator : IDisposable
         if (now >= current.DeadlineUtc)
         {
             var cancellation = current.Adapter.TryCancel();
-            Finish(
+            current.CancellationRequested = true;
+            current.CancellationState = AgentBridgeOperationState.Failed;
+            current.CancellationCode = "TimedOut";
+            current.CancellationMessage = "The specialist exceeded its deadline and DAB requested cancellation; it will retain gameplay control until the plugin becomes idle.";
+            last = Snapshot(
                 current,
-                AgentBridgeOperationState.Failed,
-                "TimedOut",
+                AgentBridgeOperationState.Running,
+                "CancellationPending",
                 cancellation.Accepted
-                    ? "The specialist exceeded its deadline and accepted cancellation."
-                    : $"The specialist exceeded its deadline and cancellation failed: {cancellation.Message}",
+                    ? current.CancellationMessage
+                    : $"The specialist exceeded its deadline and cancellation was not accepted: {cancellation.Message} DAB is retaining gameplay control until the plugin becomes idle.",
                 observation);
             return;
         }
@@ -337,6 +336,7 @@ public sealed class SpecialistOperationCoordinator : IDisposable
         public DateTimeOffset DeadlineUtc { get; } = deadlineUtc;
         public bool SawBusy { get; set; } = sawBusy;
         public bool CancellationRequested { get; set; }
+        public AgentBridgeOperationState CancellationState { get; set; } = AgentBridgeOperationState.Cancelled;
         public string? CancellationCode { get; set; }
         public string? CancellationMessage { get; set; }
     }

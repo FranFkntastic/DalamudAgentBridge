@@ -80,9 +80,32 @@ public sealed class SpecialistOperationCoordinatorTests
         Assert.Equal(AgentBridgeOperationState.Cancelled, revoked.Coordinator.Observe(false).Operation.State);
         Assert.Equal("PermissionRevoked", revoked.Coordinator.Observe(false).Operation.Code);
         Assert.Equal(1, revoked.Adapter.CancelCalls);
-        Assert.Equal(AgentBridgeOperationState.Failed, timedOut.Coordinator.Observe(true).Operation.State);
-        Assert.Equal("TimedOut", timedOut.Coordinator.Observe(true).Operation.Code);
+        Assert.Equal(AgentBridgeOperationState.Running, timedOut.Coordinator.Observe(true).Operation.State);
+        Assert.Equal("CancellationPending", timedOut.Coordinator.Observe(true).Operation.Code);
         Assert.Equal(1, timedOut.Adapter.CancelCalls);
+    }
+
+    [Fact]
+    public void TimedOutSpecialistRetainsGameplayUntilObservedIdle()
+    {
+        var fixture = new Fixture();
+        fixture.Adapter.BusyAfterStart = true;
+        var started = fixture.Coordinator.TryBegin("test.run", Envelope(timeoutSeconds: 15), permissionEnabled: true);
+
+        fixture.Clock = fixture.Clock.AddSeconds(16);
+        var pending = fixture.Coordinator.Observe(permissionEnabled: true).Operation;
+        var competingLease = fixture.Lease.TryAcquire("navigation-id", "navigation", "navigate-to", out var owner);
+        fixture.Adapter.Busy = false;
+        var terminal = fixture.Coordinator.Observe(permissionEnabled: true).Operation;
+
+        Assert.Equal(AgentBridgeOperationState.Running, pending.State);
+        Assert.Equal("CancellationPending", pending.Code);
+        Assert.False(competingLease);
+        Assert.Equal(started.Operation.OperationId, owner.OperationId);
+        Assert.Equal(1, fixture.Adapter.CancelCalls);
+        Assert.Equal(AgentBridgeOperationState.Failed, terminal.State);
+        Assert.Equal("TimedOut", terminal.Code);
+        Assert.False(fixture.Lease.Observe().IsOwned);
     }
 
     [Fact]
