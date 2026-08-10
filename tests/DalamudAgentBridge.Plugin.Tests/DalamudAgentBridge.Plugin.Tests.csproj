@@ -1,6 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,14 +9,10 @@
     <Platform>x64</Platform>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <WindowsAppSdkAutoInitialize>false</WindowsAppSdkAutoInitialize>
-    <WindowsAppSdkUndockedRegFreeWinRTInitialize>false</WindowsAppSdkUndockedRegFreeWinRTInitialize>
+    <FranthropyDalamudProject Condition="'$(FranthropyDalamudProject)' == ''">..\..\..\..\..\Franthropy\src\Franthropy.Dalamud\Franthropy.Dalamud.csproj</FranthropyDalamudProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1">
       <PrivateAssets>all</PrivateAssets>
@@ -24,11 +20,19 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DalamudAgentBridge\DalamudAgentBridge.csproj" />
-    <ProjectReference Include="..\..\src\dab-mcp\dab-mcp.csproj" />
-    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NativeSlashCommandPolicy.cs"
-              Link="NativeSlashCommandPolicy.cs" />
+    <Reference Update="Dalamud">
+      <Private>true</Private>
+    </Reference>
+    <Reference Update="Lumina">
+      <Private>true</Private>
+    </Reference>
+    <Reference Update="Lumina.Excel">
+      <Private>true</Private>
+    </Reference>
+    <ProjectReference Include="$(FranthropyDalamudProject)" />
     <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NavigationRequestPolicy.cs"
-              Link="NavigationRequestPolicy.cs" />
+             Link="NavigationRequestPolicy.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NavigationCoordinator.cs"
+             Link="NavigationCoordinator.cs" />
   </ItemGroup>
 </Project>

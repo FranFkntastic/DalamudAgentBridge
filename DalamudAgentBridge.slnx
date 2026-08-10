@@ -4,4 +4,5 @@
   <Project Path="src/dab/dab.csproj" />
   <Project Path="src/dab-mcp/dab-mcp.csproj" />
   <Project Path="tests/DalamudAgentBridge.Tests/DalamudAgentBridge.Tests.csproj" />
+  <Project Path="tests/DalamudAgentBridge.Plugin.Tests/DalamudAgentBridge.Plugin.Tests.csproj" />
 </Solution>

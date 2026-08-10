@@ -58,6 +58,14 @@ An agent should begin with:
 4. `bridge_snapshot`, `bridge_logs`, or `bridge_surfaces` for read-only
    inspection.
 
+For the standalone connector, `bridge_situation` is the dense read-only view an
+agent should use before acting. `bridge_navigate` accepts explicit same-territory
+world coordinates only after the user enables navigation in `/dab`;
+`bridge_navigation` and `bridge_navigation_cancel` expose and control that one
+owned operation. When structured position and progress cannot explain a pathing
+failure, `bridge_capture_clip` returns a bounded sequence of full-viewport frames
+paired with situation snapshots through the existing screenshot permission.
+
 Only use `bridge_act` with a manifest-declared semantic action. Unsupported
 plugins may expose read-only or reversibly presented window surfaces through
 bounded discovery, but reflection never grants arbitrary method invocation,

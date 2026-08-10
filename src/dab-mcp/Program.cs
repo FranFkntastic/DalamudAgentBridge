@@ -16,6 +16,7 @@ builder.Services.AddSingleton<PluginLifecycleClient>();
 builder.Services.AddSingleton<DevPluginDeploymentService>();
 builder.Services.AddSingleton<ReviewVault>();
 builder.Services.AddSingleton<PluginCaptureService>();
+builder.Services.AddSingleton<DiagnosticClipService>();
 builder.Services.AddSingleton<PluginSurfaceCaptureService>();
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()

@@ -49,6 +49,33 @@ public sealed record BridgeCommandRequest
     public string? OperationId { get; init; }
 }
 
+public sealed record NavigationTargetRequest(
+    uint TerritoryType,
+    float X,
+    float Y,
+    float Z,
+    float ArrivalRadius = 1.5f,
+    int TimeoutSeconds = 120);
+
+public sealed record DiagnosticClipRequest(
+    int FrameCount = 6,
+    int IntervalMilliseconds = 1000);
+
+public sealed record DiagnosticClipFrame(
+    int Index,
+    DateTimeOffset RequestedAtUtc,
+    JsonElement SituationSample,
+    PluginCaptureReviewReceipt Capture);
+
+public sealed record DiagnosticClipReceipt(
+    BridgeInstanceView Instance,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    int RequestedFrameCount,
+    int IntervalMilliseconds,
+    IReadOnlyList<DiagnosticClipFrame> Frames,
+    string? Failure = null);
+
 public sealed record BridgeCaptureReceipt
 {
     public int SchemaVersion { get; init; }

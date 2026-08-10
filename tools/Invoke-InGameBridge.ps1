@@ -1,14 +1,18 @@
 [CmdletBinding()]
 param(
     [ValidateSet(
-        'hello', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'begin-login',
+        'hello', 'get-manifest', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'begin-login',
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',
         'open-main-window', 'close-main-window', 'select-main-tab',
+        'list-plugins',
         'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin',
+        'get-situation', 'get-navigation', 'navigate-to', 'cancel-navigation',
         'send-chat', 'get-chat-log')]
     [string]$Command = 'hello',
     [string]$Target,
+    [string]$ArgumentsJson,
+    [string]$OperationId,
     [long]$FrameId,
     [int]$ProcessId,
     [string]$PluginConfigName = 'DalamudAgentBridge',
@@ -44,6 +48,14 @@ try {
     $request = @{ token = [Text.Encoding]::UTF8.GetString($tokenBytes); command = $Command; fullViewport = $false }
     if (-not [string]::IsNullOrWhiteSpace($Target)) { $request.target = $Target }
     if ($FrameId -gt 0) { $request.frameId = $FrameId }
+    if (-not [string]::IsNullOrWhiteSpace($ArgumentsJson)) {
+        $arguments = $ArgumentsJson | ConvertFrom-Json
+        if ($null -eq $arguments -or $arguments -isnot [pscustomobject]) {
+            throw 'ArgumentsJson must contain one JSON object.'
+        }
+        $request.arguments = $arguments
+    }
+    if (-not [string]::IsNullOrWhiteSpace($OperationId)) { $request.operationId = $OperationId }
 
     $pipe = [IO.Pipes.NamedPipeClientStream]::new(
         '.',

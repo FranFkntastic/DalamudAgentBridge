@@ -1,9 +1,11 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game;
 using Dalamud.Game.Chat;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
@@ -29,6 +31,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
     private readonly IChatGui chatGui;
+    private readonly ICondition condition;
+    private readonly ITargetManager targetManager;
+    private readonly IPartyList partyList;
     private readonly ChatLogBuffer chatLogBuffer = new();
     private readonly Configuration configuration;
     private readonly AgentBridgeViewportCaptureService viewportCapture;
@@ -42,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
     private readonly DalamudLifestreamLogin lifestreamLogin;
+    private readonly NavigationCoordinator navigation;
     private readonly NativeSlashCommandPolicy nativeSlashCommandPolicy;
     private readonly DalamudSharedObservationHost? sharedObservationHost;
     private int windowOpenState;
@@ -57,6 +63,9 @@ public sealed class Plugin : IDalamudPlugin
         IClientState clientState,
         IObjectTable objectTable,
         IChatGui chatGui,
+        ICondition condition,
+        ITargetManager targetManager,
+        IPartyList partyList,
         IGameInventory gameInventory,
         IAddonLifecycle addonLifecycle,
         IPluginLog pluginLog,
@@ -72,10 +81,19 @@ public sealed class Plugin : IDalamudPlugin
         this.clientState = clientState;
         this.objectTable = objectTable;
         this.chatGui = chatGui;
+        this.condition = condition;
+        this.targetManager = targetManager;
+        this.partyList = partyList;
         nativeSlashCommandPolicy = CreateNativeSlashCommandPolicy(dataManager);
         this.chatGui.ChatMessage += OnChatMessage;
         renderedTextActions = new(gameGui);
         lifestreamLogin = new(pluginInterface);
+        navigation = new NavigationCoordinator(
+            framework,
+            clientState,
+            objectTable,
+            condition,
+            new DalamudVNavmeshTravel(pluginInterface));
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         configuration.Initialize(pluginInterface);
         captureTransactions = new AgentBridgeUiCaptureTransactionManager(
@@ -102,6 +120,10 @@ public sealed class Plugin : IDalamudPlugin
             pluginInterface.AssemblyLocation.FullName,
             action => framework.RunOnTick(action),
             CreateSnapshot,
+            CreateSituationSnapshot,
+            navigation.Observe,
+            request => navigation.TryBegin(request, configuration.EnableNavigation),
+            navigation.TryCancel,
             () => reviewRegistry.Snapshot(),
             controlId => reviewRegistry.Review(controlId),
             (controlId, frameId) => reviewRegistry.Invoke(controlId, frameId),
@@ -170,6 +192,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         captureTransactions.CancelActive();
         bridgeHost.Dispose();
+        navigation.Dispose();
         chatGui.ChatMessage -= OnChatMessage;
         viewportCapture.Dispose();
         pluginSurfacePresentation.Dispose();
@@ -341,7 +364,7 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SetNextWindowViewport(mainViewport.ID);
             ImGui.SetNextWindowPos(mainViewport.WorkPos + new Vector2(16, 16), ImGuiCond.Always);
         }
-        ImGui.SetNextWindowSize(new Vector2(620, 280), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(620, 340), ImGuiCond.FirstUseEver);
         var windowOpen = WindowOpen;
         if (!ImGui.Begin("Dalamud Agent Bridge##DalamudAgentBridge", ref windowOpen))
         {
@@ -361,6 +384,7 @@ public sealed class Plugin : IDalamudPlugin
         DrawRow("World", playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable");
         DrawRow("Bridge", "Authenticated local named pipe (current user)");
         DrawRow("Screenshots", configuration.EnableScreenshots ? "Enabled — encrypted one-time handoff" : "Disabled");
+        DrawRow("Navigation", configuration.EnableNavigation ? "Enabled - explicit same-territory requests" : "Disabled");
         ImGui.Spacing();
         ImGui.TextUnformatted("Permissions");
         ImGui.Separator();
@@ -388,6 +412,14 @@ public sealed class Plugin : IDalamudPlugin
                 ToggleScreenshotHandoff();
                 return AgentBridgeUiActionResult.Ok("Screenshot handoff setting toggled.");
             });
+        var navigationEnabled = configuration.EnableNavigation;
+        if (ImGui.Checkbox("Allow explicit same-territory navigation through vnavmesh", ref navigationEnabled))
+        {
+            configuration.EnableNavigation = navigationEnabled;
+            configuration.Save();
+            if (!navigationEnabled)
+                navigation.RequestPermissionRevocation();
+        }
         ImGui.Spacing();
         ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This standalone plugin provides its own reviewed capture surface.");
         captureRegion = new AgentBridgeViewportRegion(
@@ -427,8 +459,9 @@ public sealed class Plugin : IDalamudPlugin
         bridgeWindowOpen = WindowOpen,
         client = CreateClientSnapshot(),
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "send-chat", "get-chat-log" },
+        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "send-chat", "get-chat-log" },
         screenshotsEnabled = configuration.EnableScreenshots,
+        navigationEnabled = configuration.EnableNavigation,
     };
 
     private object CreateLoginSnapshot()
@@ -480,6 +513,187 @@ public sealed class Plugin : IDalamudPlugin
         };
     }
 
+    private object CreateSituationSnapshot()
+    {
+        var player = objectTable[0];
+        var activeConditions = condition.AsReadOnlySet()
+            .Select(flag => flag.ToString())
+            .OrderBy(name => name)
+            .ToArray();
+        if (player is null)
+            return new
+            {
+                schemaVersion = 1,
+                capturedAtUtc = DateTimeOffset.UtcNow,
+                available = false,
+                client = DescribeClient(),
+                activeConditions,
+                navigation = navigation.Observe(),
+                provenance = "DalamudPublicApi",
+            };
+
+        var position = player.Position;
+        var character = player as ICharacter;
+        var battleCharacter = player as IBattleChara;
+        var nearby = objectTable
+            .Where(value => value is not null && value.EntityId != player.EntityId)
+            .Select(value => DescribeObject(value!, position))
+            .Where(value => value.Distance <= 100f)
+            .OrderBy(value => value.Distance)
+            .Take(48)
+            .ToArray();
+        var party = Enumerable.Range(0, partyList.Length)
+            .Select(index => partyList[index])
+            .Where(member => member is not null)
+            .Select(member => new
+            {
+                name = member!.Name.TextValue,
+                entityId = member.EntityId,
+                classJobId = member.ClassJob.RowId,
+                level = member.Level,
+                currentHp = member.CurrentHP,
+                maxHp = member.MaxHP,
+                currentMp = member.CurrentMP,
+                maxMp = member.MaxMP,
+                territoryType = member.Territory.RowId,
+                x = member.Position.X,
+                y = member.Position.Y,
+                z = member.Position.Z,
+                distance = Vector3.Distance(position, member.Position),
+            })
+            .ToArray();
+        string[] decisionAddons =
+        [
+            "_TargetInfo", "_TargetInfoMainTarget", "_FocusTargetInfo", "_PartyList",
+            "Talk", "SelectString", "SelectIconString", "SelectYesno", "SelectOk",
+            "ContentsFinderConfirm", "JournalAccept", "JournalResult", "NowLoading",
+            "AreaMap", "Gathering", "RecipeNote", "RetainerList", "RetainerSellList", "Shop",
+        ];
+        return new
+        {
+            schemaVersion = 1,
+            capturedAtUtc = DateTimeOffset.UtcNow,
+            available = true,
+            client = DescribeClient(),
+            character = new
+            {
+                name = playerState.CharacterName ?? player.Name.TextValue,
+                currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : null,
+                homeWorld = playerState.HomeWorld.IsValid ? playerState.HomeWorld.Value.Name.ToString() : null,
+                entityId = player.EntityId,
+                x = position.X,
+                y = position.Y,
+                z = position.Z,
+                mapCoordinates = TryGetMapCoordinates(player),
+                rotation = player.Rotation,
+                isDead = player.IsDead,
+                isTargetable = player.IsTargetable,
+                classJobId = character?.ClassJob.RowId,
+                level = character?.Level,
+                currentHp = character?.CurrentHp,
+                maxHp = character?.MaxHp,
+                currentMp = character?.CurrentMp,
+                maxMp = character?.MaxMp,
+                currentGp = character?.CurrentGp,
+                maxGp = character?.MaxGp,
+                currentCp = character?.CurrentCp,
+                maxCp = character?.MaxCp,
+                shieldPercent = character?.ShieldPercentage,
+                isCasting = battleCharacter?.IsCasting,
+                castActionId = battleCharacter?.CastActionId,
+                currentCastTime = battleCharacter?.CurrentCastTime,
+                totalCastTime = battleCharacter?.TotalCastTime,
+                statuses = battleCharacter?.StatusList.Select(status => new
+                {
+                    statusId = status.StatusId,
+                    param = status.Param,
+                    remainingSeconds = status.RemainingTime,
+                    sourceId = status.SourceId,
+                }).ToArray(),
+            },
+            target = DescribeTarget(targetManager.Target, position),
+            focusTarget = DescribeTarget(targetManager.FocusTarget, position),
+            activeConditions,
+            party,
+            nearbyObjects = nearby,
+            visibleDecisionUi = decisionAddons.Select(renderedTextActions.CaptureVisibleText).ToArray(),
+            recentChat = chatLogBuffer.Read(null, 20).Entries,
+            navigation = navigation.Observe(),
+            bounds = new { nearbyRadius = 100f, nearbyLimit = 48, recentChatLimit = 20 },
+            provenance = "DalamudPublicApiAndRenderedAddon",
+        };
+    }
+
+    private object DescribeClient() => new
+    {
+        loggedIn = clientState.IsLoggedIn,
+        territoryType = clientState.TerritoryType,
+        mapId = clientState.MapId,
+        instance = clientState.Instance,
+        isPvP = clientState.IsPvP,
+        isGPosing = clientState.IsGPosing,
+        language = clientState.ClientLanguage.ToString(),
+    };
+
+    private static SituationObject DescribeObject(IGameObject value, Vector3 origin)
+    {
+        var map = TryGetMapCoordinates(value);
+        return new SituationObject(
+            value.Name.TextValue,
+            value.EntityId,
+            value.BaseId,
+            value.ObjectKind.ToString(),
+            value.SubKind,
+            value.Position.X,
+            value.Position.Y,
+            value.Position.Z,
+            map?.X,
+            map?.Y,
+            map?.Z,
+            value.Rotation,
+            value.HitboxRadius,
+            Vector3.Distance(origin, value.Position),
+            value.IsTargetable,
+            value.IsDead);
+    }
+
+    private static object? DescribeTarget(IGameObject? value, Vector3 origin)
+    {
+        if (value is null)
+            return null;
+        var character = value as ICharacter;
+        var battleCharacter = value as IBattleChara;
+        return new
+        {
+            gameObject = DescribeObject(value, origin),
+            currentHp = character?.CurrentHp,
+            maxHp = character?.MaxHp,
+            shieldPercent = character?.ShieldPercentage,
+            isCasting = battleCharacter?.IsCasting,
+            isCastInterruptible = battleCharacter?.IsCastInterruptible,
+            castActionId = battleCharacter?.CastActionId,
+            currentCastTime = battleCharacter?.CurrentCastTime,
+            totalCastTime = battleCharacter?.TotalCastTime,
+            statuses = battleCharacter?.StatusList.Select(status => new
+            {
+                statusId = status.StatusId,
+                param = status.Param,
+                remainingSeconds = status.RemainingTime,
+                sourceId = status.SourceId,
+            }).ToArray(),
+        };
+    }
+
+    private static SituationCoordinates? TryGetMapCoordinates(IGameObject value)
+    {
+        try
+        {
+            var map = MapUtil.GetMapCoordinates(value, true);
+            return new SituationCoordinates(map.X, map.Y, map.Z);
+        }
+        catch (InvalidOperationException) { return null; }
+    }
+
     private LifestreamLoginSubmissionResult BeginLogin(string target)
     {
         var separator = target.LastIndexOf('@');
@@ -490,3 +704,23 @@ public sealed class Plugin : IDalamudPlugin
         return lifestreamLogin.TryBegin(request!);
     }
 }
+
+public sealed record SituationObject(
+    string Name,
+    uint EntityId,
+    uint BaseId,
+    string Kind,
+    byte SubKind,
+    float X,
+    float Y,
+    float Z,
+    float? MapX,
+    float? MapY,
+    float? MapZ,
+    float Rotation,
+    float HitboxRadius,
+    float Distance,
+    bool IsTargetable,
+    bool IsDead);
+
+public sealed record SituationCoordinates(float X, float Y, float Z);
