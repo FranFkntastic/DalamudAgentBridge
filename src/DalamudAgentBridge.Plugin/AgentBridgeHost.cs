@@ -42,6 +42,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, CancellationToken, Task<object>> installPlugin;
     private readonly Func<string, CancellationToken, Task<object>> installDevPlugin;
     private readonly Func<object> createLoginSnapshot;
+    private readonly Func<object> createCharacterProvisioningSnapshot;
     private readonly Func<string, LifestreamLoginSubmissionResult> beginLogin;
     private readonly Func<string, SlashCommandSubmission> sendChatLine;
     private readonly Func<long?, int?, ChatLogRead> readChatLog;
@@ -84,6 +85,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, CancellationToken, Task<object>> installPlugin,
         Func<string, CancellationToken, Task<object>> installDevPlugin,
         Func<object> createLoginSnapshot,
+        Func<object> createCharacterProvisioningSnapshot,
         Func<string, LifestreamLoginSubmissionResult> beginLogin,
         Func<IReadOnlyList<AgentBridgeActionDescriptor>> getActionCatalog,
         Func<long> getActionCatalogRevision,
@@ -118,6 +120,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.installPlugin = installPlugin;
         this.installDevPlugin = installDevPlugin;
         this.createLoginSnapshot = createLoginSnapshot;
+        this.createCharacterProvisioningSnapshot = createCharacterProvisioningSnapshot;
         this.beginLogin = beginLogin;
         this.getActionCatalog = getActionCatalog;
         this.getActionCatalogRevision = getActionCatalogRevision;
@@ -152,7 +155,7 @@ public sealed class AgentBridgeHost : IDisposable
             "DalamudAgentBridge.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
-                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("chat", 2), new("chat-log"),
+                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
                 new("situation", 2), new("navigation"), new("specialist-cockpit"),
             ],
             surfaceRegistry.Snapshot(),
@@ -183,6 +186,7 @@ public sealed class AgentBridgeHost : IDisposable
         ];
         foreach (var command in commands)
             router.Register(command, HandleProductRequestAsync);
+        new CharacterProvisioningBridgeCommand(createCharacterProvisioningSnapshot, action => OnFrameworkAsync(action)).Register(router);
     }
 
     private async ValueTask<AgentBridgeResponse> HandleProductRequestAsync(AgentBridgeRequest request, CancellationToken cancellationToken)
