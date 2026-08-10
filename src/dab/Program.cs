@@ -25,6 +25,7 @@ try
     var reviewVault = new ReviewVault(configuration);
     var capture = new PluginCaptureService(client, pipe, reviewVault);
     var surfaceCapture = new PluginSurfaceCaptureService(client, capture);
+    var surfaceInteraction = new PluginSurfaceInteractionCaptureService(client, surfaceCapture);
     object result = commandLine.Command switch
     {
         "list" => client.List(),
@@ -36,6 +37,10 @@ try
             commandLine.Required("transaction"), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
         "surface-capture" => await surfaceCapture.CaptureAsync(
             commandLine.Plugin(), commandLine.Required("surface"), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
+        "surface-input" => await client.InteractPluginSurfaceAsync(
+            commandLine.Required("transaction"), commandLine.InputSequence(), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
+        "surface-interact-capture" => await surfaceInteraction.InteractAndCaptureAsync(
+            commandLine.Plugin(), commandLine.Required("surface"), commandLine.InputSequence(), commandLine.Profile(), commandLine.ProcessId(), cancellation.Token),
         "health" => await client.GetHealthAsync(commandLine.Target(), cancellation.Token),
         "manifest" => await client.GetManifestAsync(commandLine.Target(), cancellation.Token),
         "snapshot" => await client.GetSnapshotAsync(commandLine.Target(), cancellation.Token),
@@ -125,7 +130,7 @@ internal sealed class DabCommandLine
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             throw new ArgumentException(
-                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|health|manifest|snapshot|specialists|specialist-start|specialist-cancel|logs|chat|wait|act|deploy|install|capture> [plugin-or-capability] [--profile primary] [options]");
+                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|surface-input|surface-interact-capture|health|manifest|snapshot|specialists|specialist-start|specialist-cancel|logs|chat|wait|act|deploy|install|capture> [plugin-or-capability] [--profile primary] [options]");
         var options = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var positionals = new List<string>();
         for (var index = 1; index < args.Length; index++)
@@ -197,6 +202,15 @@ internal sealed class DabCommandLine
             return null;
         using var document = JsonDocument.Parse(value);
         return document.RootElement.Clone();
+    }
+
+    public PluginSurfaceInputSequenceRequest InputSequence()
+    {
+        var value = Required("sequence");
+        return JsonSerializer.Deserialize<PluginSurfaceInputSequenceRequest>(value, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            PropertyNameCaseInsensitive = true,
+        }) ?? throw new ArgumentException("Option '--sequence' must contain a surface input sequence JSON object.");
     }
 
     public BridgeWaitCondition Condition(string pathName, string equalsName) =>

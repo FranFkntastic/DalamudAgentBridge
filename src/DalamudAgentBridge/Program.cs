@@ -30,6 +30,7 @@ builder.Services.AddSingleton<DevPluginDeploymentService>();
 builder.Services.AddSingleton<PluginCaptureService>();
 builder.Services.AddSingleton<DiagnosticClipService>();
 builder.Services.AddSingleton<PluginSurfaceCaptureService>();
+builder.Services.AddSingleton<PluginSurfaceInteractionCaptureService>();
 
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -99,6 +100,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-plugin-surfaces",
     "begin-plugin-surface-presentation",
     "restore-plugin-surface-presentation",
+    "interact-plugin-surface",
     "capture-plugin-surface",
     "enable-plugin",
     "disable-plugin",
@@ -306,6 +308,33 @@ app.MapPost("/api/plugin-surfaces/{surfaceId}/captures", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or InvalidDataException)
     {
         return Results.Problem($"Plugin surface capture failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/plugin-surfaces/{surfaceId}/interaction-captures", async (
+    string surfaceId,
+    string plugin,
+    string? profile,
+    int? processId,
+    PluginSurfaceInputSequenceRequest sequence,
+    PluginSurfaceInteractionCaptureService interaction,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var receipt = await interaction.InteractAndCaptureAsync(
+            plugin, surfaceId, sequence, profile ?? "primary", processId, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(new
+        {
+            success = true,
+            message = "Surface presented, interacted with through ImGui, captured, and restored.",
+            receipt,
+            imageUrl = receipt.Capture.ImagePath,
+        });
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or InvalidDataException or ArgumentException)
+    {
+        return Results.Problem($"Plugin surface interaction capture failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 

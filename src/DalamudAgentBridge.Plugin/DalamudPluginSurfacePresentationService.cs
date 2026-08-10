@@ -27,6 +27,8 @@ internal sealed class DalamudPluginSurfacePresentationService : IDisposable
 
     public AgentBridgePluginSurfacePresentationResult Restore(string transactionId) => manager.Restore(transactionId);
 
+    public ReflectedPluginWindowPresentationTarget? GetActiveTarget(string transactionId) => manager.GetActiveTarget(transactionId);
+
     public string GetCaptureWindowName(string transactionId)
     {
         var target = manager.GetActiveTarget(transactionId);

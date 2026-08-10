@@ -18,6 +18,7 @@ public sealed class AgentBridgeTools
     private readonly PluginCaptureService capture;
     private readonly DiagnosticClipService clips;
     private readonly PluginSurfaceCaptureService surfaceCapture;
+    private readonly PluginSurfaceInteractionCaptureService surfaceInteraction;
     private readonly ReviewVault reviewVault;
 
     public AgentBridgeTools(
@@ -27,6 +28,7 @@ public sealed class AgentBridgeTools
         PluginCaptureService capture,
         DiagnosticClipService clips,
         PluginSurfaceCaptureService surfaceCapture,
+        PluginSurfaceInteractionCaptureService surfaceInteraction,
         ReviewVault reviewVault)
     {
         this.client = client;
@@ -35,6 +37,7 @@ public sealed class AgentBridgeTools
         this.capture = capture;
         this.clips = clips;
         this.surfaceCapture = surfaceCapture;
+        this.surfaceInteraction = surfaceInteraction;
         this.reviewVault = reviewVault;
     }
 
@@ -119,6 +122,41 @@ public sealed class AgentBridgeTools
             plugin, surfaceId, profile, processId, cancellationToken).ConfigureAwait(false);
         if (!reviewVault.TryRead(receipt.Capture.Review.Id, out var pngBytes))
             throw new InvalidOperationException("The verified surface review image could not be read from the short-lived vault.");
+        try
+        {
+            var base64Bytes = Encoding.UTF8.GetBytes(Convert.ToBase64String(pngBytes));
+            return new CallToolResult
+            {
+                Content =
+                [
+                    new TextContentBlock { Text = Json(receipt) },
+                    new ImageContentBlock { Data = base64Bytes, MimeType = "image/png" },
+                ],
+            };
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(pngBytes);
+        }
+    }
+
+    [McpServerTool(Name = "bridge_surface_interact_capture", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Present one reflected plugin window, deliver a bounded ImGui-only input sequence relative to that window, capture the settled result, and restore prior state. This never emits OS input or targets native FFXIV UI.")]
+    public async Task<CallToolResult> InteractAndCaptureSurface(
+        [Description("Installed plugin internal name.")] string plugin,
+        [Description("Reversible reflected surface id returned by bridge_surfaces.")] string surfaceId,
+        [Description("JSON object with schemaVersion 1 and bounded move, click, scroll, text, key, drag, or wait steps.")] string sequenceJson,
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id.")] int? processId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sequence = JsonSerializer.Deserialize<PluginSurfaceInputSequenceRequest>(sequenceJson, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            PropertyNameCaseInsensitive = true,
+        }) ?? throw new ArgumentException("The surface input sequence JSON was empty.");
+        var receipt = await surfaceInteraction.InteractAndCaptureAsync(
+            plugin, surfaceId, sequence, profile, processId, cancellationToken).ConfigureAwait(false);
+        if (!reviewVault.TryRead(receipt.Capture.Review.Id, out var pngBytes))
+            throw new InvalidOperationException("The verified interacted surface review image could not be read from the short-lived vault.");
         try
         {
             var base64Bytes = Encoding.UTF8.GetBytes(Convert.ToBase64String(pngBytes));

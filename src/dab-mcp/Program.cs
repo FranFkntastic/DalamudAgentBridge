@@ -18,6 +18,7 @@ builder.Services.AddSingleton<ReviewVault>();
 builder.Services.AddSingleton<PluginCaptureService>();
 builder.Services.AddSingleton<DiagnosticClipService>();
 builder.Services.AddSingleton<PluginSurfaceCaptureService>();
+builder.Services.AddSingleton<PluginSurfaceInteractionCaptureService>();
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()
     .WithTools<AgentBridgeTools>();

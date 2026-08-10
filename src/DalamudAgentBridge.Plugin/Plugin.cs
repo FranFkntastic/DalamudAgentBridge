@@ -46,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginDevInstallService pluginDevInstall;
     private readonly DalamudPluginSurfaceDiscoveryService pluginSurfaceDiscovery;
     private readonly DalamudPluginSurfacePresentationService pluginSurfacePresentation;
+    private readonly ReflectedPluginWindowInputController pluginSurfaceInput;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
@@ -122,7 +123,8 @@ public sealed class Plugin : IDalamudPlugin
         pluginInstall = new DalamudPluginInstallService(pluginInterface);
         pluginDevInstall = new DalamudPluginDevInstallService(pluginInterface);
         pluginSurfaceDiscovery = new DalamudPluginSurfaceDiscoveryService(pluginInterface);
-        pluginSurfacePresentation = new DalamudPluginSurfacePresentationService(pluginSurfaceDiscovery, framework);
+        pluginSurfacePresentation = new DalamudPluginSurfacePresentationService(pluginSurfaceDiscovery, framework, TimeSpan.FromSeconds(30));
+        pluginSurfaceInput = new ReflectedPluginWindowInputController(pluginSurfacePresentation.GetActiveTarget);
         bridgeHost = new AgentBridgeHost(
             configuration,
             pluginInterface.GetPluginConfigDirectory(),
@@ -153,6 +155,7 @@ public sealed class Plugin : IDalamudPlugin
             target => pluginSurfaceDiscovery.Snapshot(target),
             pluginSurfacePresentation.Begin,
             pluginSurfacePresentation.Restore,
+            pluginSurfaceInput.SubmitAsync,
             async (internalName, enabled, cancellationToken) =>
                 await pluginLifecycle.SetEnabledAsync(internalName, enabled, cancellationToken).ConfigureAwait(false),
             async (internalName, cancellationToken) =>
@@ -210,6 +213,7 @@ public sealed class Plugin : IDalamudPlugin
         navigation.Dispose();
         chatGui.ChatMessage -= OnChatMessage;
         viewportCapture.Dispose();
+        pluginSurfaceInput.Dispose();
         pluginSurfacePresentation.Dispose();
         sharedObservationHost?.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
@@ -358,6 +362,7 @@ public sealed class Plugin : IDalamudPlugin
         finally
         {
             frame = reviewRegistry.EndFrame();
+            pluginSurfaceInput.RenderFrame();
             viewportCapture.RenderPendingWindowCapture();
         }
         if (captureRegion != null && frame != null && captureTransactions.ShouldPresentInMainViewport("bridge.main-window"))
@@ -401,6 +406,7 @@ public sealed class Plugin : IDalamudPlugin
         DrawRow("World", playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable");
         DrawRow("Bridge", "Authenticated local named pipe (current user)");
         DrawRow("Screenshots", configuration.EnableScreenshots ? "Enabled — encrypted one-time handoff" : "Disabled");
+        DrawRow("Surface input", configuration.EnableSurfaceInput ? "Enabled - leased ImGui plugin windows only" : "Disabled");
         DrawRow("Navigation", configuration.EnableNavigation ? "Enabled - explicit same-territory requests" : "Disabled");
         DrawRow("Specialists", configuration.EnableSpecialistAutomation ? "Enabled - reviewed plugin adapters" : "Disabled");
         ImGui.Spacing();
@@ -430,6 +436,13 @@ public sealed class Plugin : IDalamudPlugin
                 ToggleScreenshotHandoff();
                 return AgentBridgeUiActionResult.Ok("Screenshot handoff setting toggled.");
             });
+        var surfaceInputEnabled = configuration.EnableSurfaceInput;
+        if (ImGui.Checkbox("Allow bounded input inside leased plugin ImGui windows", ref surfaceInputEnabled))
+        {
+            configuration.EnableSurfaceInput = surfaceInputEnabled;
+            configuration.Save();
+        }
+        ImGui.TextDisabled("Surface input is normalized to one current reflected plugin window; it never emits desktop input or targets native FFXIV UI.");
         var navigationEnabled = configuration.EnableNavigation;
         if (ImGui.Checkbox("Allow explicit same-territory navigation through vnavmesh", ref navigationEnabled))
         {
@@ -486,8 +499,9 @@ public sealed class Plugin : IDalamudPlugin
         bridgeWindowOpen = WindowOpen,
         client = CreateClientSnapshot(),
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "get-character-provisioning", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "get-specialists", "start-specialist", "cancel-specialist", "send-chat", "get-chat-log" },
+        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "interact-plugin-surface", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "get-character-provisioning", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "get-specialists", "start-specialist", "cancel-specialist", "send-chat", "get-chat-log" },
         screenshotsEnabled = configuration.EnableScreenshots,
+        surfaceInputEnabled = configuration.EnableSurfaceInput,
         navigationEnabled = configuration.EnableNavigation,
         specialistAutomationEnabled = configuration.EnableSpecialistAutomation,
     };

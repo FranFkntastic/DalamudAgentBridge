@@ -74,7 +74,7 @@ public sealed class PluginSurfaceCaptureService
     // surface settles; genuine failures surface after the deadline.
     private static readonly string[] TransientCaptureMarkers = ["capture bounds", "capture viewport"];
 
-    private async Task<PluginCaptureReviewReceipt> CapturePresentedSurfaceAsync(
+    public async Task<PluginCaptureReviewReceipt> CapturePresentedSurfaceAsync(
         BridgeTargetSelector connector,
         string transactionId,
         CancellationToken cancellationToken)
