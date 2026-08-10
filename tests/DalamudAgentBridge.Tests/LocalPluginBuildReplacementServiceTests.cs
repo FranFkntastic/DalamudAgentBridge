@@ -52,6 +52,51 @@ public sealed class LocalPluginBuildReplacementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplaceAsync_RejectsThePluginServingTheRequest()
+    {
+        var instance = CreateInstance();
+        var plugin = CreatePlugin("DalamudAgentBridge", isLoaded: true);
+        var lifecycle = new FakePluginLifecycleClient(plugin);
+        var service = new LocalPluginBuildReplacementService(lifecycle);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReplaceAsync(
+            instance,
+            plugin.InternalName,
+            new LocalPluginBuildReplacementRequest { SourceDirectory = Path.Combine(root, "unused") },
+            CancellationToken.None));
+
+        Assert.Contains("cannot replace itself", exception.Message);
+        Assert.Empty(lifecycle.RequestedStates);
+    }
+
+    [Fact]
+    public async Task ReplaceAsync_AllowsPeerBridgeToReplaceDalamudAgentBridge()
+    {
+        var instance = CreateInstance() with
+        {
+            PluginName = "MarketMafioso",
+            PluginInternalName = "MarketMafioso",
+        };
+        var plugin = CreatePlugin("DalamudAgentBridge", isLoaded: true);
+        var lifecycle = new FakePluginLifecycleClient(plugin);
+        var service = new LocalPluginBuildReplacementService(lifecycle);
+        var installed = LocalPluginBuildReplacementService.ResolveInstalledPluginDirectory(instance, plugin);
+        CreateBuild(installed, plugin.InternalName, "old");
+        var source = Path.Combine(root, "peer-source");
+        CreateBuild(source, plugin.InternalName, "new");
+
+        var receipt = await service.ReplaceAsync(
+            instance,
+            plugin.InternalName,
+            new LocalPluginBuildReplacementRequest { SourceDirectory = source },
+            CancellationToken.None);
+
+        Assert.Equal([false, true], lifecycle.RequestedStates);
+        Assert.True(receipt.IsLoaded);
+        Assert.Equal("new", File.ReadAllText(Path.Combine(installed, $"{plugin.InternalName}.dll")));
+    }
+
+    [Fact]
     public async Task ReplaceAsync_RejectsMismatchedManifestBeforeDisablingPlugin()
     {
         var instance = CreateInstance();
@@ -122,10 +167,12 @@ public sealed class LocalPluginBuildReplacementServiceTests : IDisposable
         };
     }
 
-    private static InstalledPluginState CreatePlugin(bool isLoaded) => new()
+    private static InstalledPluginState CreatePlugin(bool isLoaded) => CreatePlugin("ExamplePlugin", isLoaded);
+
+    private static InstalledPluginState CreatePlugin(string internalName, bool isLoaded) => new()
     {
-        InternalName = "ExamplePlugin",
-        Name = "Example Plugin",
+        InternalName = internalName,
+        Name = internalName,
         Version = "1.2.3.4",
         IsLoaded = isLoaded,
     };

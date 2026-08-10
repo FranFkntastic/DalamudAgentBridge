@@ -17,7 +17,7 @@ public sealed class LocalPluginBuildReplacementService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(internalName);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceDirectory);
-        if (string.Equals(internalName, "DalamudAgentBridge", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(internalName, instance.PluginInternalName, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The bridge cannot replace itself while serving a request.");
 
         var startedAt = DateTimeOffset.UtcNow;
