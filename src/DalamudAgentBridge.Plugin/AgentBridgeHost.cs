@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using SharedAgentBridgeHost = Franthropy.Dalamud.AgentBridge.AgentBridgeHost;
@@ -14,6 +15,10 @@ namespace DalamudAgentBridge.Plugin;
 /// <summary>Product policy and semantic commands layered on Franthropy's shared authenticated host.</summary>
 public sealed class AgentBridgeHost : IDisposable
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
     private readonly Configuration configuration;
     private readonly Func<Action, Task> dispatchOnFramework;
     private readonly Func<object> createSnapshot;
@@ -38,6 +43,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog;
     private readonly Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation;
     private readonly Func<string, AgentBridgePluginSurfacePresentationResult> restorePluginSurfacePresentation;
+    private readonly Func<string, ReflectedPluginWindowInputSequence, CancellationToken, Task<ReflectedPluginWindowInputReceipt>> interactPluginSurface;
     private readonly Func<string, bool, CancellationToken, Task<object>> setPluginEnabled;
     private readonly Func<string, CancellationToken, Task<object>> installPlugin;
     private readonly Func<string, CancellationToken, Task<object>> installDevPlugin;
@@ -81,6 +87,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog,
         Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation,
         Func<string, AgentBridgePluginSurfacePresentationResult> restorePluginSurfacePresentation,
+        Func<string, ReflectedPluginWindowInputSequence, CancellationToken, Task<ReflectedPluginWindowInputReceipt>> interactPluginSurface,
         Func<string, bool, CancellationToken, Task<object>> setPluginEnabled,
         Func<string, CancellationToken, Task<object>> installPlugin,
         Func<string, CancellationToken, Task<object>> installDevPlugin,
@@ -116,6 +123,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.createPluginSurfaceCatalog = createPluginSurfaceCatalog;
         this.beginPluginSurfacePresentation = beginPluginSurfacePresentation;
         this.restorePluginSurfacePresentation = restorePluginSurfacePresentation;
+        this.interactPluginSurface = interactPluginSurface;
         this.setPluginEnabled = setPluginEnabled;
         this.installPlugin = installPlugin;
         this.installDevPlugin = installDevPlugin;
@@ -155,7 +163,7 @@ public sealed class AgentBridgeHost : IDisposable
             "DalamudAgentBridge.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
-                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
+                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
                 new("situation", 2), new("navigation"), new("specialist-cockpit"),
             ],
             surfaceRegistry.Snapshot(),
@@ -176,7 +184,7 @@ public sealed class AgentBridgeHost : IDisposable
             "get-snapshot", "get-client-snapshot", "get-control-surface", "get-control", "invoke-control", "get-review-surfaces",
             "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "begin-login", "list-plugins",
             "get-plugin-surfaces",
-            "begin-plugin-surface-presentation", "restore-plugin-surface-presentation",
+            "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "interact-plugin-surface",
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
             "cancel-capture-presentation", "capture-screen",
             "capture-plugin-surface",
@@ -256,6 +264,38 @@ public sealed class AgentBridgeHost : IDisposable
                 return restoredPresentation.Success
                     ? AgentBridgeResponse.Ok(restoredPresentation.Message, restoredPresentation)
                     : new AgentBridgeResponse { Success = false, Message = restoredPresentation.Message, Receipt = restoredPresentation };
+            case "interact-plugin-surface":
+                if (!configuration.EnableSurfaceInput)
+                    return AgentBridgeResponse.Fail("Reflected plugin surface input is disabled in the in-game DAB settings.");
+                if (string.IsNullOrWhiteSpace(request.TransactionId))
+                    return AgentBridgeResponse.Fail("A current plugin surface presentation transaction is required.");
+                if (request.Arguments is not { } inputArguments)
+                    return AgentBridgeResponse.Fail("A bounded plugin surface input sequence is required.");
+                ReflectedPluginWindowInputSequence? inputSequence;
+                try
+                {
+                    inputSequence = inputArguments.Deserialize<ReflectedPluginWindowInputSequence>(JsonOptions);
+                }
+                catch (JsonException exception)
+                {
+                    return AgentBridgeResponse.Fail($"Plugin surface input is invalid: {exception.Message}");
+                }
+                if (inputSequence is null)
+                    return AgentBridgeResponse.Fail("The plugin surface input sequence was empty.");
+                try
+                {
+                    return AgentBridgeResponse.Ok(
+                        "Bounded input was delivered to the leased plugin ImGui window.",
+                        await interactPluginSurface(request.TransactionId, inputSequence, cancellationToken).ConfigureAwait(false));
+                }
+                catch (OperationCanceledException)
+                {
+                    return AgentBridgeResponse.Fail("Plugin surface input was cancelled or timed out.");
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+                {
+                    return AgentBridgeResponse.Fail($"Plugin surface input failed: {exception.Message}");
+                }
             case "get-control":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A control ID is required.");
                 var review = await OnFrameworkAsync(() => reviewControl(request.Target)).ConfigureAwait(false);

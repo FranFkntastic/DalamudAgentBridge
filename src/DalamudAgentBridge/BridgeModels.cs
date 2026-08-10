@@ -114,6 +114,45 @@ public sealed record PluginSurfaceCaptureReviewReceipt(
     PluginCaptureReviewReceipt Capture,
     Franthropy.Dalamud.AgentBridge.AgentBridgePluginSurfacePresentationResult Restoration);
 
+public sealed record PluginSurfaceInputStepRequest(
+    string Kind,
+    float? X = null,
+    float? Y = null,
+    float? EndX = null,
+    float? EndY = null,
+    float DeltaX = 0,
+    float DeltaY = 0,
+    int MouseButton = 0,
+    string? Text = null,
+    string? Key = null,
+    int Frames = 1);
+
+public sealed record PluginSurfaceInputSequenceRequest(
+    int SchemaVersion,
+    IReadOnlyList<PluginSurfaceInputStepRequest> Steps);
+
+public sealed record PluginSurfaceInputReceipt(
+    int SchemaVersion,
+    string TransactionId,
+    string PluginInternalName,
+    string SurfaceId,
+    string RuntimeInstanceId,
+    string WindowName,
+    float WindowX,
+    float WindowY,
+    float WindowWidth,
+    float WindowHeight,
+    int RequestedSteps,
+    int ExecutedFrames,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc);
+
+public sealed record PluginSurfaceInteractionCaptureReviewReceipt(
+    Franthropy.Dalamud.AgentBridge.AgentBridgePluginSurfacePresentationReceipt Presentation,
+    PluginSurfaceInputReceipt Interaction,
+    PluginCaptureReviewReceipt Capture,
+    Franthropy.Dalamud.AgentBridge.AgentBridgePluginSurfacePresentationResult Restoration);
+
 public sealed record PluginBridgeRequest
 {
     public required string Token { get; init; }

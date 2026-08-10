@@ -73,10 +73,13 @@ in `/dab`, `bridge_specialist_start` can invoke only those reviewed capability
 IDs and `bridge_specialist_cancel` can stop the exact owned operation. DAB never
 turns reflected or unknown IPC methods into agent-callable mutation tools.
 
-Only use `bridge_act` with a manifest-declared semantic action. Unsupported
+Use `bridge_act` for manifest-declared semantic product actions. Unsupported
 plugins may expose read-only or reversibly presented window surfaces through
-bounded discovery, but reflection never grants arbitrary method invocation,
-coordinate input, or inferred mutation.
+bounded discovery. When the separate in-game surface-input permission is
+enabled, `bridge_surface_interact_capture` can deliver a bounded ImGui-only
+visual-test sequence relative to one current leased window; it does not grant
+arbitrary method invocation, native FFXIV input, desktop input, or inferred
+semantic authority.
 
 ## Troubleshooting
 

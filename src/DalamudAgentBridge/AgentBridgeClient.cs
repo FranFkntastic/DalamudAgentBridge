@@ -224,6 +224,31 @@ public sealed class AgentBridgeClient
         return new AgentBridgePluginSurfacePresentationResult(response.Success, response.Message, transactionId);
     }
 
+    public async Task<PluginSurfaceInputReceipt> InteractPluginSurfaceAsync(
+        string transactionId,
+        PluginSurfaceInputSequenceRequest sequence,
+        string? profile,
+        int? processId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(transactionId);
+        ArgumentNullException.ThrowIfNull(sequence);
+        var connector = Resolve(new BridgeTargetSelector("DalamudAgentBridge", profile, processId));
+        var response = await pipe.SendAsync(
+            connector,
+            "interact-plugin-surface",
+            new BridgeCommandRequest
+            {
+                TransactionId = transactionId,
+                Arguments = JsonSerializer.SerializeToElement(sequence, JsonOptions),
+            },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Deserialize<PluginSurfaceInputReceipt>(JsonOptions)
+            ?? throw new InvalidDataException("The bridge returned an invalid plugin surface input receipt.");
+    }
+
     public async Task<BridgeWaitReceipt> WaitForSnapshotAsync(
         BridgeTargetSelector selector,
         BridgeWaitCondition condition,
