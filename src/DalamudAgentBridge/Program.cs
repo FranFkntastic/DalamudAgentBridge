@@ -113,6 +113,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-specialists",
     "start-specialist",
     "cancel-specialist",
+    "send-chat",
 };
 
 app.MapGet("/api/bridges", (AgentBridgeClient client) => client.List());
