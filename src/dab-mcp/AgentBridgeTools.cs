@@ -341,8 +341,7 @@ public sealed class AgentBridgeTools
         };
         foreach (var frame in receipt.Frames)
         {
-            if (!reviewVault.TryRead(frame.Capture.Review.Id, out var pngBytes))
-                continue;
+            var pngBytes = RequireClipFrame(reviewVault, frame);
             try
             {
                 content.Add(new TextContentBlock { Text = $"Frame {frame.Index} captured at {frame.Capture.Receipt.CapturedAtUtc:O}." });
@@ -358,6 +357,13 @@ public sealed class AgentBridgeTools
             }
         }
         return new CallToolResult { Content = content };
+    }
+
+    internal static byte[] RequireClipFrame(ReviewVault reviewVault, DiagnosticClipFrame frame)
+    {
+        if (!reviewVault.TryRead(frame.Capture.Review.Id, out var pngBytes))
+            throw new InvalidOperationException($"The verified image for clip frame {frame.Index} could not be read from the short-lived vault.");
+        return pngBytes;
     }
 
     [McpServerTool(Name = "bridge_install_plugin", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true), Description("Install and load a plugin from the profile's configured Dalamud plugin repositories through the in-game connector. Refuses plugins that are already installed and cannot install over the bridge itself. Installs the release channel build.")]

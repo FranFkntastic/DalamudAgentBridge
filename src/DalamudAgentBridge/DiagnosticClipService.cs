@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace DalamudAgentBridge;
 
@@ -121,15 +122,62 @@ public sealed class DiagnosticClipService
             value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var property)
                 ? property.Clone()
                 : null;
-        return JsonSerializer.SerializeToElement(new
-        {
-            schemaVersion = Property(situation, "schemaVersion"),
-            capturedAtUtc = Property(situation, "capturedAtUtc"),
-            available = Property(situation, "available"),
-            client = Property(situation, "client"),
-            character = Property(situation, "character"),
-            activeConditions = Property(situation, "activeConditions"),
-            navigation = Property(situation, "navigation"),
-        });
+        var client = Property(situation, "client");
+        var character = Property(situation, "character");
+        return JsonSerializer.SerializeToElement(new DiagnosticClipSituation(
+            Property(situation, "schemaVersion"),
+            Property(situation, "capturedAtUtc"),
+            Property(situation, "available"),
+            new DiagnosticClipLocation(
+                client is { } clientValue ? Property(clientValue, "territoryType") : null,
+                client is { } clientMap ? Property(clientMap, "mapId") : null,
+                client is { } clientInstance ? Property(clientInstance, "instance") : null,
+                character is { } characterX ? Property(characterX, "x") : null,
+                character is { } characterY ? Property(characterY, "y") : null,
+                character is { } characterZ ? Property(characterZ, "z") : null,
+                character is { } characterMapX && Property(characterMapX, "mapCoordinates") is { } mapX ? Property(mapX, "x") : null,
+                character is { } characterMapY && Property(characterMapY, "mapCoordinates") is { } mapY ? Property(mapY, "y") : null,
+                character is { } characterMapZ && Property(characterMapZ, "mapCoordinates") is { } mapZ ? Property(mapZ, "z") : null,
+                character is { } characterRotation ? Property(characterRotation, "rotation") : null),
+            new DiagnosticClipResources(
+                character is { } characterCurrentHp ? Property(characterCurrentHp, "currentHp") : null,
+                character is { } characterMaxHp ? Property(characterMaxHp, "maxHp") : null,
+                character is { } characterCurrentMp ? Property(characterCurrentMp, "currentMp") : null,
+                character is { } characterMaxMp ? Property(characterMaxMp, "maxMp") : null,
+                character is { } characterCurrentGp ? Property(characterCurrentGp, "currentGp") : null,
+                character is { } characterMaxGp ? Property(characterMaxGp, "maxGp") : null,
+                character is { } characterCurrentCp ? Property(characterCurrentCp, "currentCp") : null,
+                character is { } characterMaxCp ? Property(characterMaxCp, "maxCp") : null),
+            Property(situation, "navigation")), new JsonSerializerOptions(JsonSerializerDefaults.Web));
     }
+
+    private sealed record DiagnosticClipSituation(
+        JsonElement? SchemaVersion,
+        JsonElement? CapturedAtUtc,
+        JsonElement? Available,
+        DiagnosticClipLocation Location,
+        DiagnosticClipResources Resources,
+        JsonElement? Navigation);
+
+    private sealed record DiagnosticClipLocation(
+        JsonElement? TerritoryType,
+        JsonElement? MapId,
+        JsonElement? Instance,
+        JsonElement? X,
+        JsonElement? Y,
+        JsonElement? Z,
+        JsonElement? MapX,
+        JsonElement? MapY,
+        JsonElement? MapZ,
+        JsonElement? Rotation);
+
+    private sealed record DiagnosticClipResources(
+        JsonElement? CurrentHp,
+        JsonElement? MaxHp,
+        JsonElement? CurrentMp,
+        JsonElement? MaxMp,
+        JsonElement? CurrentGp,
+        JsonElement? MaxGp,
+        JsonElement? CurrentCp,
+        JsonElement? MaxCp);
 }

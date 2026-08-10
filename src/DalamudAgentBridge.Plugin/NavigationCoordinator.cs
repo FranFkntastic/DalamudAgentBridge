@@ -31,7 +31,8 @@ public sealed record NavigationSnapshot(
     DateTimeOffset? DeadlineUtc,
     DateTimeOffset? LastProgressAtUtc,
     VNavmeshLifecycleObservation VNavmesh,
-    bool CanCancel);
+    bool CanCancel,
+    bool OwnershipContested = false);
 
 public sealed record NavigationSubmissionResult(
     bool Success,
@@ -39,9 +40,19 @@ public sealed record NavigationSubmissionResult(
     string Message,
     NavigationSnapshot Navigation);
 
+public interface INavigationTravel
+{
+    VNavmeshLifecycleObservation Observe();
+    VNavmeshPathSubmissionResult TryMoveCloseTo(Vector3 destination, float range);
+    bool TryStop();
+}
+
 /// <summary>Owns one explicit vnavmesh movement request and turns it into an observable operation.</summary>
 public sealed class NavigationCoordinator : IDisposable
 {
+    private const int MaximumStopAttempts = 5;
+    private static readonly TimeSpan InitialStopRetryDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan MaximumStopRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly ConditionFlag[] UnsafeConditions =
     [
         ConditionFlag.Unconscious,
@@ -66,7 +77,8 @@ public sealed class NavigationCoordinator : IDisposable
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
     private readonly ICondition condition;
-    private readonly DalamudVNavmeshTravel vnavmesh;
+    private readonly INavigationTravel vnavmesh;
+    private readonly Func<DateTimeOffset> utcNow;
     private ActiveNavigation? active;
     private NavigationSnapshot? last;
     private bool permissionRevocationRequested;
@@ -77,12 +89,24 @@ public sealed class NavigationCoordinator : IDisposable
         IObjectTable objectTable,
         ICondition condition,
         DalamudVNavmeshTravel vnavmesh)
+        : this(framework, clientState, objectTable, condition, new VnavmeshNavigationTravel(vnavmesh), () => DateTimeOffset.UtcNow)
+    {
+    }
+
+    internal NavigationCoordinator(
+        IFramework framework,
+        IClientState clientState,
+        IObjectTable objectTable,
+        ICondition condition,
+        INavigationTravel vnavmesh,
+        Func<DateTimeOffset> utcNow)
     {
         this.framework = framework;
         this.clientState = clientState;
         this.objectTable = objectTable;
         this.condition = condition;
         this.vnavmesh = vnavmesh;
+        this.utcNow = utcNow;
         framework.Update += OnFrameworkUpdate;
     }
 
@@ -98,12 +122,8 @@ public sealed class NavigationCoordinator : IDisposable
         if (clientState.TerritoryType != request.TerritoryType)
             return Reject("TerritoryMismatch", $"The current territory is {clientState.TerritoryType}, not {request.TerritoryType}.");
 
-        var unsafeFlags = new List<string>();
-        foreach (var flag in UnsafeConditions)
-            if (condition[flag])
-                unsafeFlags.Add(flag.ToString());
-        if (unsafeFlags.Count > 0)
-            return Reject("UnsafeClientState", $"Navigation is unavailable while these conditions are active: {string.Join(", ", unsafeFlags)}.");
+        if (UnsafeStateMessage() is { } unsafeStateMessage)
+            return Reject("UnsafeClientState", unsafeStateMessage);
 
         var destination = new Vector3(request.X, request.Y, request.Z);
         var distance = Vector3.Distance(player.Position, destination);
@@ -119,7 +139,7 @@ public sealed class NavigationCoordinator : IDisposable
         if (!submission.Submitted)
             return Reject(submission.Code, submission.Message);
 
-        var now = DateTimeOffset.UtcNow;
+        var now = utcNow();
         active = new ActiveNavigation(
             Guid.NewGuid().ToString("N"), request, destination, now, now.AddSeconds(request.TimeoutSeconds),
             distance, distance, now);
@@ -136,7 +156,7 @@ public sealed class NavigationCoordinator : IDisposable
             AgentBridgeOperationState.Succeeded,
             "Idle",
             "DAB does not own a navigation request.",
-            null, null, null, null, null, null, null, DateTimeOffset.UtcNow, null, null,
+            null, null, null, null, null, null, null, utcNow(), null, null,
             vnavmesh.Observe(),
             false);
     }
@@ -152,14 +172,10 @@ public sealed class NavigationCoordinator : IDisposable
         }
         if (!string.IsNullOrWhiteSpace(operationId) && !string.Equals(active.OperationId, operationId, StringComparison.Ordinal))
             return Reject("OperationMismatch", "The supplied operationId does not identify DAB's active navigation request.");
-        if (!vnavmesh.TryStop())
-            return Reject("CancelFailed", "vnavmesh did not accept the stop request.");
-
         var current = active;
-        var distance = CurrentDistance(current);
-        last = Snapshot(current, AgentBridgeOperationState.Cancelled, "Cancelled", "Navigation was cancelled.", distance);
-        active = null;
-        return new NavigationSubmissionResult(true, "Cancelled", "Navigation was cancelled.", last);
+        if (current.Stop is null)
+            Finish(current, AgentBridgeOperationState.Cancelled, "Cancelled", "Navigation was cancelled.", CurrentDistance(current), stop: true);
+        return new NavigationSubmissionResult(true, "CancellationRequested", "DAB is confirming that vnavmesh has stopped.", last!);
     }
 
     public void RequestPermissionRevocation()
@@ -182,18 +198,19 @@ public sealed class NavigationCoordinator : IDisposable
     {
         if (active is not { } current)
             return;
+        if (current.Stop is not null)
+        {
+            UpdateStopping(current);
+            return;
+        }
         if (permissionRevocationRequested)
         {
-            if (vnavmesh.TryStop())
-            {
-                last = Snapshot(current, AgentBridgeOperationState.Cancelled, "PermissionRevoked", "Navigation stopped because the in-game permission was disabled.", CurrentDistance(current));
-                active = null;
-                permissionRevocationRequested = false;
-            }
-            else
-            {
-                last = Snapshot(current, AgentBridgeOperationState.Running, "PermissionRevocationPending", "Navigation permission is disabled; DAB is retrying the vnavmesh stop request.", CurrentDistance(current));
-            }
+            Finish(current, AgentBridgeOperationState.Cancelled, "PermissionRevoked", "Navigation stopped because the in-game permission was disabled.", CurrentDistance(current), stop: true);
+            return;
+        }
+        if (UnsafeStateMessage() is { } unsafeStateMessage)
+        {
+            Finish(current, AgentBridgeOperationState.Failed, "UnsafeClientState", unsafeStateMessage, CurrentDistance(current), stop: true);
             return;
         }
         var player = objectTable[0];
@@ -208,7 +225,7 @@ public sealed class NavigationCoordinator : IDisposable
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = utcNow();
         var distance = Vector3.Distance(player.Position, current.Destination);
         if (distance < current.BestDistance)
         {
@@ -245,12 +262,94 @@ public sealed class NavigationCoordinator : IDisposable
         float? distance,
         bool stop)
     {
-        if (stop)
-            vnavmesh.TryStop();
+        if (!stop)
+        {
+            Complete(current, state, code, message, distance);
+            return;
+        }
+
+        current.Stop = new PendingStop(state, code, message, distance, utcNow());
+        UpdateStopping(current);
+    }
+
+    private void UpdateStopping(ActiveNavigation current)
+    {
+        var stop = current.Stop!;
+        var lifecycle = vnavmesh.Observe();
+        if (!lifecycle.IsRunning)
+        {
+            Complete(current, stop.State, stop.Code, stop.Message, stop.Distance);
+            return;
+        }
+
+        var now = utcNow();
+        if (stop.Attempts >= MaximumStopAttempts)
+        {
+            last = Snapshot(
+                current,
+                AgentBridgeOperationState.Failed,
+                "StopUnresolved",
+                "vnavmesh remained running after DAB exhausted its stop retry budget; ownership remains contested.",
+                CurrentDistance(current),
+                lifecycle,
+                ownershipContested: true);
+            return;
+        }
+
+        if (now >= stop.NextAttemptAtUtc)
+        {
+            stop.Attempts++;
+            var accepted = vnavmesh.TryStop();
+            stop.NextAttemptAtUtc = now.Add(StopRetryDelay(stop.Attempts));
+            lifecycle = vnavmesh.Observe();
+            if (!lifecycle.IsRunning)
+            {
+                Complete(current, stop.State, stop.Code, stop.Message, stop.Distance);
+                return;
+            }
+
+            last = Snapshot(
+                current,
+                AgentBridgeOperationState.Running,
+                "Stopping",
+                accepted
+                    ? "DAB requested a vnavmesh stop and is waiting for its running state to clear."
+                    : "vnavmesh did not accept DAB's stop request; DAB is retaining ownership and will retry.",
+                CurrentDistance(current),
+                lifecycle);
+            return;
+        }
+
+        last = Snapshot(
+            current,
+            AgentBridgeOperationState.Running,
+            "Stopping",
+            "DAB is retaining navigation ownership while waiting to retry the vnavmesh stop request.",
+            CurrentDistance(current),
+            lifecycle);
+    }
+
+    private void Complete(ActiveNavigation current, AgentBridgeOperationState state, string code, string message, float? distance)
+    {
         last = Snapshot(current, state, code, message, distance);
         active = null;
         permissionRevocationRequested = false;
     }
+
+    private string? UnsafeStateMessage()
+    {
+        var unsafeFlags = new List<string>();
+        foreach (var flag in UnsafeConditions)
+            if (condition[flag])
+                unsafeFlags.Add(flag.ToString());
+        return unsafeFlags.Count == 0
+            ? null
+            : $"Navigation is unavailable while these conditions are active: {string.Join(", ", unsafeFlags)}.";
+    }
+
+    private static TimeSpan StopRetryDelay(int attempts) => TimeSpan.FromMilliseconds(Math.Min(
+        InitialStopRetryDelay.TotalMilliseconds * Math.Pow(2, attempts - 1),
+        MaximumStopRetryDelay.TotalMilliseconds));
 
     private float? CurrentDistance(ActiveNavigation current)
     {
@@ -270,7 +369,7 @@ public sealed class NavigationCoordinator : IDisposable
         float distance,
         float bestDistance)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = utcNow();
         return new NavigationSnapshot(
             operationId, state, code, message, Destination(request), distance, distance, bestDistance, 0f, 0d,
             now, now, now, now, vnavmesh.Observe(), false);
@@ -282,7 +381,8 @@ public sealed class NavigationCoordinator : IDisposable
         string code,
         string message,
         float? distance,
-        VNavmeshLifecycleObservation? lifecycle = null) =>
+        VNavmeshLifecycleObservation? lifecycle = null,
+        bool ownershipContested = false) =>
         new(
             value.OperationId,
             state,
@@ -293,13 +393,14 @@ public sealed class NavigationCoordinator : IDisposable
             distance,
             value.BestDistance,
             value.StartDistance - value.BestDistance,
-            Math.Max(0d, (DateTimeOffset.UtcNow - value.LastProgressAtUtc).TotalSeconds),
+            Math.Max(0d, (utcNow() - value.LastProgressAtUtc).TotalSeconds),
             value.StartedAtUtc,
-            DateTimeOffset.UtcNow,
+            utcNow(),
             value.DeadlineUtc,
             value.LastProgressAtUtc,
             lifecycle ?? vnavmesh.Observe(),
-            state == AgentBridgeOperationState.Running);
+            state == AgentBridgeOperationState.Running && !ownershipContested,
+            ownershipContested);
 
     private static NavigationDestination Destination(NavigationPointRequest request) =>
         new(request.TerritoryType, request.X, request.Y, request.Z, request.ArrivalRadius);
@@ -322,5 +423,28 @@ public sealed class NavigationCoordinator : IDisposable
         public float StartDistance { get; } = startDistance;
         public float BestDistance { get; set; } = bestDistance;
         public DateTimeOffset LastProgressAtUtc { get; set; } = lastProgressAtUtc;
+        public PendingStop? Stop { get; set; }
+    }
+
+    private sealed class PendingStop(
+        AgentBridgeOperationState state,
+        string code,
+        string message,
+        float? distance,
+        DateTimeOffset requestedAtUtc)
+    {
+        public AgentBridgeOperationState State { get; } = state;
+        public string Code { get; } = code;
+        public string Message { get; } = message;
+        public float? Distance { get; } = distance;
+        public int Attempts { get; set; }
+        public DateTimeOffset NextAttemptAtUtc { get; set; } = requestedAtUtc;
+    }
+
+    private sealed class VnavmeshNavigationTravel(DalamudVNavmeshTravel vnavmesh) : INavigationTravel
+    {
+        public VNavmeshLifecycleObservation Observe() => vnavmesh.Observe();
+        public VNavmeshPathSubmissionResult TryMoveCloseTo(Vector3 destination, float range) => vnavmesh.TryMoveCloseTo(destination, range);
+        public bool TryStop() => vnavmesh.TryStop();
     }
 }
