@@ -47,7 +47,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
     private readonly DalamudLifestreamLogin lifestreamLogin;
+    private readonly GameplayControlLease gameplayControl = new();
     private readonly NavigationCoordinator navigation;
+    private readonly SpecialistOperationCoordinator specialists;
     private readonly NativeSlashCommandPolicy nativeSlashCommandPolicy;
     private readonly DalamudSharedObservationHost? sharedObservationHost;
     private int windowOpenState;
@@ -93,9 +95,12 @@ public sealed class Plugin : IDalamudPlugin
             clientState,
             objectTable,
             condition,
-            new DalamudVNavmeshTravel(pluginInterface));
+            new DalamudVNavmeshTravel(pluginInterface),
+            gameplayControl);
         configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         configuration.Initialize(pluginInterface);
+        specialists = new SpecialistOperationCoordinator(SpecialistAdapters.Create(pluginInterface), gameplayControl);
+        framework.Update += OnFrameworkUpdate;
         captureTransactions = new AgentBridgeUiCaptureTransactionManager(
             () => WindowOpen,
             value => WindowOpen = value,
@@ -124,6 +129,9 @@ public sealed class Plugin : IDalamudPlugin
             navigation.Observe,
             request => navigation.TryBegin(request, configuration.EnableNavigation),
             navigation.TryCancel,
+            () => specialists.Observe(configuration.EnableSpecialistAutomation),
+            (capabilityId, arguments) => specialists.TryBegin(capabilityId, arguments, configuration.EnableSpecialistAutomation),
+            specialists.TryCancel,
             () => reviewRegistry.Snapshot(),
             controlId => reviewRegistry.Review(controlId),
             (controlId, frameId) => reviewRegistry.Invoke(controlId, frameId),
@@ -192,6 +200,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         captureTransactions.CancelActive();
         bridgeHost.Dispose();
+        framework.Update -= OnFrameworkUpdate;
+        specialists.Dispose();
         navigation.Dispose();
         chatGui.ChatMessage -= OnChatMessage;
         viewportCapture.Dispose();
@@ -202,6 +212,8 @@ public sealed class Plugin : IDalamudPlugin
         pluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
         commandManager.RemoveHandler(CommandName);
     }
+
+    private void OnFrameworkUpdate(IFramework _) => specialists.Tick();
 
     private bool WindowOpen
     {
@@ -385,6 +397,7 @@ public sealed class Plugin : IDalamudPlugin
         DrawRow("Bridge", "Authenticated local named pipe (current user)");
         DrawRow("Screenshots", configuration.EnableScreenshots ? "Enabled — encrypted one-time handoff" : "Disabled");
         DrawRow("Navigation", configuration.EnableNavigation ? "Enabled - explicit same-territory requests" : "Disabled");
+        DrawRow("Specialists", configuration.EnableSpecialistAutomation ? "Enabled - reviewed plugin adapters" : "Disabled");
         ImGui.Spacing();
         ImGui.TextUnformatted("Permissions");
         ImGui.Separator();
@@ -420,6 +433,15 @@ public sealed class Plugin : IDalamudPlugin
             if (!navigationEnabled)
                 navigation.RequestPermissionRevocation();
         }
+        var specialistsEnabled = configuration.EnableSpecialistAutomation;
+        if (ImGui.Checkbox("Allow reviewed specialist plugins to automate gameplay", ref specialistsEnabled))
+        {
+            configuration.EnableSpecialistAutomation = specialistsEnabled;
+            configuration.Save();
+            if (!specialistsEnabled)
+                specialists.RequestPermissionRevocation();
+        }
+        ImGui.TextDisabled("Only typed Questionable, AutoDuty, Henchman, and Lifestream adapters can act; unknown IPC remains read-only.");
         ImGui.Spacing();
         ImGui.TextDisabled("Capture is only available through the locally authenticated utility. This standalone plugin provides its own reviewed capture surface.");
         captureRegion = new AgentBridgeViewportRegion(
@@ -459,9 +481,10 @@ public sealed class Plugin : IDalamudPlugin
         bridgeWindowOpen = WindowOpen,
         client = CreateClientSnapshot(),
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
-        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "send-chat", "get-chat-log" },
+        capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "get-specialists", "start-specialist", "cancel-specialist", "send-chat", "get-chat-log" },
         screenshotsEnabled = configuration.EnableScreenshots,
         navigationEnabled = configuration.EnableNavigation,
+        specialistAutomationEnabled = configuration.EnableSpecialistAutomation,
     };
 
     private object CreateLoginSnapshot()
@@ -523,12 +546,13 @@ public sealed class Plugin : IDalamudPlugin
         if (player is null)
             return new
             {
-                schemaVersion = 1,
+                schemaVersion = 2,
                 capturedAtUtc = DateTimeOffset.UtcNow,
                 available = false,
                 client = DescribeClient(),
                 activeConditions,
                 navigation = navigation.Observe(),
+                specialists = specialists.ObserveSituation(configuration.EnableSpecialistAutomation),
                 provenance = "DalamudPublicApi",
             };
 
@@ -571,7 +595,7 @@ public sealed class Plugin : IDalamudPlugin
         ];
         return new
         {
-            schemaVersion = 1,
+            schemaVersion = 2,
             capturedAtUtc = DateTimeOffset.UtcNow,
             available = true,
             client = DescribeClient(),
@@ -619,6 +643,7 @@ public sealed class Plugin : IDalamudPlugin
             visibleDecisionUi = decisionAddons.Select(renderedTextActions.CaptureVisibleText).ToArray(),
             recentChat = chatLogBuffer.Read(null, 20).Entries,
             navigation = navigation.Observe(),
+            specialists = specialists.ObserveSituation(configuration.EnableSpecialistAutomation),
             bounds = new { nearbyRadius = 100f, nearbyLimit = 48, recentChatLimit = 20 },
             provenance = "DalamudPublicApiAndRenderedAddon",
         };

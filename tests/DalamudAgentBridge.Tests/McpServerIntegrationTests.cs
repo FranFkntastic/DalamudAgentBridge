@@ -35,6 +35,9 @@ public sealed class McpServerIntegrationTests
         Assert.Contains(tools, tool => tool.Name == "bridge_navigate");
         Assert.Contains(tools, tool => tool.Name == "bridge_navigation_cancel");
         Assert.Contains(tools, tool => tool.Name == "bridge_capture_clip");
+        Assert.Contains(tools, tool => tool.Name == "bridge_specialists");
+        Assert.Contains(tools, tool => tool.Name == "bridge_specialist_start");
+        Assert.Contains(tools, tool => tool.Name == "bridge_specialist_cancel");
         var result = await client.CallToolAsync("bridge_list", new Dictionary<string, object?>());
         Assert.NotEqual(true, result.IsError);
         Assert.NotEmpty(result.Content);

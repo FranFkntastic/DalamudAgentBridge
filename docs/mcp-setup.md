@@ -66,6 +66,13 @@ owned operation. When structured position and progress cannot explain a pathing
 failure, `bridge_capture_clip` returns a bounded sequence of full-viewport frames
 paired with situation snapshots through the existing screenshot permission.
 
+Use `bridge_specialists` before delegating to another automation plugin. Its
+read-only catalog exposes exact installed versions, compatibility, busy state,
+typed parameters, and risk labels. After the user enables specialist automation
+in `/dab`, `bridge_specialist_start` can invoke only those reviewed capability
+IDs and `bridge_specialist_cancel` can stop the exact owned operation. DAB never
+turns reflected or unknown IPC methods into agent-callable mutation tools.
+
 Only use `bridge_act` with a manifest-declared semantic action. Unsupported
 plugins may expose read-only or reversibly presented window surfaces through
 bounded discovery, but reflection never grants arbitrary method invocation,

@@ -147,7 +147,7 @@ public sealed class NavigationCoordinatorLifecycleTests
             var clientState = Proxy<IClientState>(call => call.Name == "get_TerritoryType" ? 129u : null);
             var objectTable = Proxy<IObjectTable>(call => call.Name == "get_Item" ? player : null);
             var condition = Proxy<ICondition>(call => call.Name == "get_Item" && Unsafe ? true : false);
-            Coordinator = new NavigationCoordinator(framework, clientState, objectTable, condition, Vnavmesh, () => now);
+            Coordinator = new NavigationCoordinator(framework, clientState, objectTable, condition, Vnavmesh, new GameplayControlLease(), () => now);
         }
 
         public NavigationCoordinator Coordinator { get; }

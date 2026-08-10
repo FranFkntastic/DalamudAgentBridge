@@ -107,6 +107,9 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-navigation",
     "navigate-to",
     "cancel-navigation",
+    "get-specialists",
+    "start-specialist",
+    "cancel-specialist",
 };
 
 app.MapGet("/api/bridges", (AgentBridgeClient client) => client.List());
@@ -128,6 +131,76 @@ app.MapGet("/api/bridges/{id}/situation", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Situation read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/specialists", async (
+    string id,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient pipe,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var response = await pipe.SendAsync(instance, "get-specialists", null, cancellationToken).ConfigureAwait(false);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Specialist catalog read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/specialists/{capabilityId}", async (
+    string id,
+    string capabilityId,
+    SpecialistOperationHttpRequest request,
+    BridgeRegistry registry,
+    AgentBridgeClient client,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var response = await client.StartSpecialistAsync(
+            instance,
+            new SpecialistStartRequest(capabilityId, request.Parameters, request.TimeoutSeconds),
+            cancellationToken).ConfigureAwait(false);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Specialist start failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/bridges/{id}/specialists/cancel", async (
+    string id,
+    string? operationId,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient pipe,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var response = await pipe.SendAsync(
+            instance,
+            "cancel-specialist",
+            new BridgeCommandRequest { OperationId = operationId },
+            cancellationToken).ConfigureAwait(false);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Specialist cancellation failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 
