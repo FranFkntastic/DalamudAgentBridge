@@ -9,6 +9,7 @@ using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using Franthropy.Dalamud.AgentBridge;
 using Franthropy.Dalamud.Automation.Characters;
 using Franthropy.Dalamud.Travel;
@@ -35,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ICondition condition;
     private readonly ITargetManager targetManager;
     private readonly IPartyList partyList;
+    private readonly IGameGui gameGui;
     private readonly ChatLogBuffer chatLogBuffer = new();
     private readonly Configuration configuration;
     private readonly AgentBridgeViewportCaptureService viewportCapture;
@@ -87,6 +89,7 @@ public sealed class Plugin : IDalamudPlugin
         this.condition = condition;
         this.targetManager = targetManager;
         this.partyList = partyList;
+        this.gameGui = gameGui;
         nativeSlashCommandPolicy = CreateNativeSlashCommandPolicy(dataManager);
         this.chatGui.ChatMessage += OnChatMessage;
         renderedTextActions = new(gameGui);
@@ -547,9 +550,53 @@ public sealed class Plugin : IDalamudPlugin
             approvedGameVersion = CharacterProvisioningDefaults.ApprovedGameVersion,
             playerAvailable,
             stage,
+            selection = CaptureCharacterProvisioningSelection(),
             addons,
             provenance = "RenderedAddon",
         };
+    }
+
+    private unsafe CharacterProvisioningSelectionObservation CaptureCharacterProvisioningSelection()
+    {
+        var addon = gameGui.GetAddonByName<AtkUnitBase>("_CharaMakeWorldServer", 1);
+        if (addon == null || addon->RootNode == null || !addon->RootNode->IsVisible() || !addon->IsReady)
+            return CharacterProvisioningSelectionResolver.Resolve([]);
+
+        var candidates = new List<CharacterProvisioningSelectionCandidate>();
+        CaptureSelectedWorldLists(&addon->UldManager, candidates, new HashSet<nint>());
+        return CharacterProvisioningSelectionResolver.Resolve(candidates);
+    }
+
+    private static unsafe void CaptureSelectedWorldLists(
+        AtkUldManager* manager,
+        List<CharacterProvisioningSelectionCandidate> candidates,
+        HashSet<nint> visited)
+    {
+        if (manager == null || manager->NodeList == null || !visited.Add((nint)manager))
+            return;
+        for (var index = 0; index < manager->NodeListCount; index++)
+        {
+            var node = manager->NodeList[index];
+            var componentNode = node == null ? null : node->GetAsAtkComponentNode();
+            if (componentNode == null || componentNode->Component == null)
+                continue;
+            if (componentNode->Component->GetComponentType() == ComponentType.List)
+            {
+                var list = (AtkComponentList*)componentNode->Component;
+                var selectedIndex = list->SelectedItemIndex;
+                if (selectedIndex >= 0 && selectedIndex < list->ListLength)
+                {
+                    var selectedChoice = list->ItemRendererList != null
+                        ? list->ItemRendererList[selectedIndex].Label.ToString().Trim()
+                        : string.Empty;
+                    if (string.IsNullOrWhiteSpace(selectedChoice) && list->ItemLabels != null)
+                        selectedChoice = list->ItemLabels[selectedIndex].ToString().Trim();
+                    if (!string.IsNullOrWhiteSpace(selectedChoice))
+                        candidates.Add(new(selectedChoice, selectedChoice, "_CharaMakeWorldServer.AtkComponentList.SelectedItemIndex"));
+                }
+            }
+            CaptureSelectedWorldLists(&componentNode->Component->UldManager, candidates, visited);
+        }
     }
 
     private object CreateClientSnapshot()

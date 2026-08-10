@@ -42,5 +42,9 @@
              Link="SpecialistRequestPolicy.cs" />
     <Compile Include="..\..\src\DalamudAgentBridge.Plugin\SpecialistOperationCoordinator.cs"
              Link="SpecialistOperationCoordinator.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\CharacterProvisioningBridgeCommand.cs"
+             Link="CharacterProvisioningBridgeCommand.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\CharacterProvisioningSelectionObservation.cs"
+             Link="CharacterProvisioningSelectionObservation.cs" />
   </ItemGroup>
 </Project>

@@ -174,7 +174,7 @@ public sealed class AgentBridgeHost : IDisposable
         string[] commands =
         [
             "get-snapshot", "get-client-snapshot", "get-control-surface", "get-control", "invoke-control", "get-review-surfaces",
-            "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "get-character-provisioning", "begin-login", "list-plugins",
+            "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "begin-login", "list-plugins",
             "get-plugin-surfaces",
             "begin-plugin-surface-presentation", "restore-plugin-surface-presentation",
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
@@ -186,6 +186,7 @@ public sealed class AgentBridgeHost : IDisposable
         ];
         foreach (var command in commands)
             router.Register(command, HandleProductRequestAsync);
+        new CharacterProvisioningBridgeCommand(createCharacterProvisioningSnapshot, action => OnFrameworkAsync(action)).Register(router);
     }
 
     private async ValueTask<AgentBridgeResponse> HandleProductRequestAsync(AgentBridgeRequest request, CancellationToken cancellationToken)
@@ -283,8 +284,6 @@ public sealed class AgentBridgeHost : IDisposable
                 return AgentBridgeResponse.Ok("Capture surfaces captured.", getCaptureSurfaces());
             case "get-login-ui":
                 return AgentBridgeResponse.Ok("Rendered title and login UI captured without requiring a local player.", await OnFrameworkAsync(createLoginSnapshot).ConfigureAwait(false));
-            case "get-character-provisioning":
-                return AgentBridgeResponse.Ok("Rendered character-provisioning state captured without mutating the client.", await OnFrameworkAsync(createCharacterProvisioningSnapshot).ConfigureAwait(false));
             case "begin-login":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A Character Name@Home World target is required.");
                 var login = await OnFrameworkAsync(() => beginLogin(request.Target)).ConfigureAwait(false);
