@@ -59,9 +59,11 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly (string Id, string Alias) profile;
     private readonly Func<IReadOnlyList<AgentBridgeActionDescriptor>> getActionCatalog;
     private readonly Func<long> getActionCatalogRevision;
+    private readonly string pipeName;
 
     public AgentBridgeHost(
         Configuration configuration,
+        string pluginInternalName,
         string configDirectory,
         string mainDllPath,
         Func<Action, Task> dispatchOnFramework,
@@ -99,6 +101,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, SlashCommandSubmission> sendChatLine,
         Func<long?, int?, ChatLogRead> readChatLog)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pluginInternalName);
         this.configuration = configuration;
         this.dispatchOnFramework = dispatchOnFramework;
         this.createSnapshot = createSnapshot;
@@ -134,8 +137,9 @@ public sealed class AgentBridgeHost : IDisposable
         this.getActionCatalogRevision = getActionCatalogRevision;
         this.sendChatLine = sendChatLine;
         this.readChatLog = readChatLog;
+        pipeName = $"{pluginInternalName}.{Environment.ProcessId}";
         profile = AgentBridgeProfileIdentity.FromPluginConfigDirectory(configDirectory);
-        runtimeIdentity = AgentBridgeRuntimeIdentity.FromAssembly("DalamudAgentBridge", Assembly.GetExecutingAssembly(), mainDllPath);
+        runtimeIdentity = AgentBridgeRuntimeIdentity.FromAssembly(pluginInternalName, Assembly.GetExecutingAssembly(), mainDllPath);
         surfaceRegistry.Register(
             new AgentBridgeReviewSurfaceDescriptor("bridge.main-window", "Dalamud Agent Bridge window", "present-surface", "bridge.main-window", 10),
             openWindow);
@@ -144,7 +148,7 @@ public sealed class AgentBridgeHost : IDisposable
         {
             ConfigDirectory = configDirectory,
             PluginInstanceId = configuration.PluginInstanceId,
-            PipeName = $"DalamudAgentBridge.{Environment.ProcessId}",
+            PipeName = pipeName,
             GetProtectedAccessToken = () => configuration.AgentBridgeProtectedAccessToken,
             SetProtectedAccessToken = value => configuration.AgentBridgeProtectedAccessToken = value,
             SaveConfiguration = configuration.Save,
@@ -160,7 +164,7 @@ public sealed class AgentBridgeHost : IDisposable
             runtimeIdentity,
             profile.Id,
             profile.Alias,
-            "DalamudAgentBridge.snapshot.v2",
+            $"{runtimeIdentity.PluginInternalName}.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
                 new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
@@ -171,7 +175,7 @@ public sealed class AgentBridgeHost : IDisposable
             getActionCatalog(),
             surfaceRegistry.CatalogRevision + getActionCatalogRevision());
 
-    public string PipeName => $"DalamudAgentBridge.{Environment.ProcessId}";
+    public string PipeName => pipeName;
 
     public void Start() => host.Start();
 

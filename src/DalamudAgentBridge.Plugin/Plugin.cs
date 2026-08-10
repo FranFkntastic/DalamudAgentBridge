@@ -25,7 +25,6 @@ namespace DalamudAgentBridge.Plugin;
 
 public sealed class Plugin : IDalamudPlugin
 {
-    private const string CommandName = "/dab";
     private readonly IDalamudPluginInterface pluginInterface;
     private readonly ICommandManager commandManager;
     private readonly IPlayerState playerState;
@@ -56,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly SpecialistOperationCoordinator specialists;
     private readonly NativeSlashCommandPolicy nativeSlashCommandPolicy;
     private readonly DalamudSharedObservationHost? sharedObservationHost;
+    private readonly string commandName;
     private int windowOpenState;
     private int requestedCollapsedState;
     private int windowCollapsedState;
@@ -91,6 +91,9 @@ public sealed class Plugin : IDalamudPlugin
         this.targetManager = targetManager;
         this.partyList = partyList;
         this.gameGui = gameGui;
+        commandName = string.Equals(pluginInterface.Manifest.InternalName, "DalamudAgentBridge", StringComparison.OrdinalIgnoreCase)
+            ? "/dab"
+            : "/dab-ui-audit";
         nativeSlashCommandPolicy = CreateNativeSlashCommandPolicy(dataManager);
         this.chatGui.ChatMessage += OnChatMessage;
         renderedTextActions = new(gameGui);
@@ -127,6 +130,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginSurfaceInput = new ReflectedPluginWindowInputController(pluginSurfacePresentation.GetActiveTarget);
         bridgeHost = new AgentBridgeHost(
             configuration,
+            pluginInterface.Manifest.InternalName,
             pluginInterface.GetPluginConfigDirectory(),
             pluginInterface.AssemblyLocation.FullName,
             action => framework.RunOnTick(action),
@@ -170,7 +174,7 @@ public sealed class Plugin : IDalamudPlugin
             SendChatLine,
             chatLogBuffer.Read);
         bridgeHost.Start();
-        commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+        commandManager.AddHandler(commandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Open the Dalamud Agent Bridge connector status window.",
         });
@@ -182,7 +186,7 @@ public sealed class Plugin : IDalamudPlugin
             sharedObservationHost = new DalamudSharedObservationHost(new DalamudSharedObservationHostOptions
             {
                 PluginConfigDirectory = pluginInterface.GetPluginConfigDirectory(),
-                PluginName = "DalamudAgentBridge",
+                PluginName = pluginInterface.Manifest.InternalName,
                 PluginInstanceId = Guid.NewGuid().ToString("N"),
                 GameBuild = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion(),
                 GameInventory = gameInventory,
@@ -219,7 +223,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginInterface.UiBuilder.Draw -= Draw;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
         pluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
-        commandManager.RemoveHandler(CommandName);
+        commandManager.RemoveHandler(commandName);
     }
 
     private void OnFrameworkUpdate(IFramework _) => specialists.Tick();
