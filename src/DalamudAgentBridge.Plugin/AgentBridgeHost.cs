@@ -44,7 +44,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation;
     private readonly Func<string, AgentBridgePluginSurfacePresentationResult> restorePluginSurfacePresentation;
     private readonly Func<string, ReflectedPluginWindowInputSequence, CancellationToken, Task<ReflectedPluginWindowInputReceipt>> interactPluginSurface;
-    private readonly Func<string, bool, CancellationToken, Task<object>> setPluginEnabled;
+    private readonly Func<string, bool, bool?, CancellationToken, Task<object>> setPluginEnabled;
     private readonly Func<string, CancellationToken, Task<object>> installPlugin;
     private readonly Func<string, CancellationToken, Task<object>> installDevPlugin;
     private readonly Func<object> createLoginSnapshot;
@@ -90,7 +90,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation,
         Func<string, AgentBridgePluginSurfacePresentationResult> restorePluginSurfacePresentation,
         Func<string, ReflectedPluginWindowInputSequence, CancellationToken, Task<ReflectedPluginWindowInputReceipt>> interactPluginSurface,
-        Func<string, bool, CancellationToken, Task<object>> setPluginEnabled,
+        Func<string, bool, bool?, CancellationToken, Task<object>> setPluginEnabled,
         Func<string, CancellationToken, Task<object>> installPlugin,
         Func<string, CancellationToken, Task<object>> installDevPlugin,
         Func<object> createLoginSnapshot,
@@ -342,7 +342,14 @@ public sealed class AgentBridgeHost : IDisposable
                 try
                 {
                     var enable = request.Command == "enable-plugin";
-                    var receipt = await setPluginEnabled(request.Target, enable, cancellationToken).ConfigureAwait(false);
+                    bool? isDev = null;
+                    if (request.Arguments is { } arguments && arguments.TryGetProperty("isDev", out var isDevElement))
+                    {
+                        if (isDevElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            return AgentBridgeResponse.Fail("Plugin selector 'isDev' must be a boolean.");
+                        isDev = isDevElement.GetBoolean();
+                    }
+                    var receipt = await setPluginEnabled(request.Target, enable, isDev, cancellationToken).ConfigureAwait(false);
                     return AgentBridgeResponse.Ok(enable ? "Plugin enabled." : "Plugin disabled.", receipt);
                 }
                 catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException or OperationCanceledException)

@@ -2,8 +2,10 @@ using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -36,15 +38,19 @@ internal sealed class DalamudPluginLifecycleService
     public async Task<PluginLifecycleChangeReceipt> SetEnabledAsync(
         string internalName,
         bool enabled,
+        bool? isDev,
         CancellationToken cancellationToken)
     {
-        var managedPlugin = FindRequiredExposed(internalName, enabled);
+        var managedPlugin = FindRequiredExposed(internalName, enabled, isDev);
         var before = ToState(managedPlugin);
         if (string.Equals(before.InternalName, pluginInterface.Manifest.InternalName, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The bridge cannot change its own lifecycle while serving a request.");
 
         if (before.IsLoaded == enabled)
             return new PluginLifecycleChangeReceipt(enabled, false, before, before, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+        if (isDev is not null)
+            return await SetExactEnabledAsync(managedPlugin, before, enabled, cancellationToken).ConfigureAwait(false);
 
         var requestedAt = DateTimeOffset.UtcNow;
         var command = enabled ? "/xlenableplugin" : "/xldisableplugin";
@@ -66,10 +72,98 @@ internal sealed class DalamudPluginLifecycleService
         }
     }
 
-    private IExposedPlugin FindRequiredExposed(string internalName, bool enabling)
+    private async Task<PluginLifecycleChangeReceipt> SetExactEnabledAsync(
+        IExposedPlugin managedPlugin,
+        PluginLifecycleState before,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        var requestedAt = DateTimeOffset.UtcNow;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(StateChangeTimeout);
+
+        var plugin = (object)managedPlugin;
+        if (enabled)
+        {
+            await SetProfileStateAsync(plugin, before.InternalName, true).WaitAsync(timeout.Token).ConfigureAwait(false);
+            await LoadExactAsync(plugin, timeout.Token).ConfigureAwait(false);
+        }
+        else
+        {
+            await InvokeTask(plugin, "UnloadAsync").WaitAsync(timeout.Token).ConfigureAwait(false);
+            await SetProfileStateAsync(plugin, before.InternalName, false).WaitAsync(timeout.Token).ConfigureAwait(false);
+        }
+
+        while (true)
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            var current = FindRequired(before.InternalName, before.Version, before.IsDev);
+            if (current.IsLoaded == enabled)
+                return new PluginLifecycleChangeReceipt(enabled, true, before, current, requestedAt, DateTimeOffset.UtcNow);
+            await Task.Delay(100, timeout.Token).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task LoadExactAsync(object plugin, CancellationToken cancellationToken)
+    {
+        var dalamudAssembly = typeof(IDalamudPluginInterface).Assembly;
+        var loadReasonType = dalamudAssembly.GetType("Dalamud.Plugin.PluginLoadReason")
+            ?? throw new InvalidOperationException("Dalamud PluginLoadReason type was not found.");
+        var loadReason = Enum.Parse(loadReasonType, "Installer");
+        var load = plugin.GetType().GetMethod("LoadAsync", BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new InvalidOperationException("Dalamud plugin LoadAsync method was not found.");
+        var task = (Task?)load.Invoke(plugin, [loadReason, false, cancellationToken])
+            ?? throw new InvalidOperationException("Dalamud plugin LoadAsync returned no task.");
+        await task.ConfigureAwait(false);
+    }
+
+    private static async Task SetProfileStateAsync(object plugin, string internalName, bool enabled)
+    {
+        var pluginIdProperty = plugin.GetType().GetProperty("EffectiveWorkingPluginId", BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new InvalidOperationException("Dalamud plugin identity was not found.");
+        if (pluginIdProperty.GetValue(plugin) is not Guid pluginId)
+            throw new InvalidOperationException("Dalamud plugin identity was invalid.");
+
+        var dalamudAssembly = typeof(IDalamudPluginInterface).Assembly;
+        var profileManagerType = dalamudAssembly.GetType("Dalamud.Plugin.Internal.Profiles.ProfileManager")
+            ?? throw new InvalidOperationException("Dalamud ProfileManager type was not found.");
+        var serviceType = dalamudAssembly.GetType("Dalamud.Service`1")?.MakeGenericType(profileManagerType)
+            ?? throw new InvalidOperationException("Dalamud service locator type was not found.");
+        var profileManager = serviceType.GetMethod("Get", BindingFlags.Static | BindingFlags.Public)?.Invoke(null, null)
+            ?? throw new InvalidOperationException("Dalamud ProfileManager service is not available.");
+        var profiles = (IEnumerable?)profileManagerType.GetProperty("Profiles", BindingFlags.Instance | BindingFlags.Public)?.GetValue(profileManager)
+            ?? throw new InvalidOperationException("Dalamud profiles were not available.");
+
+        var matches = profiles.Cast<object>().Where(profile =>
+        {
+            var wantsPlugin = profile.GetType().GetMethod("WantsPlugin", BindingFlags.Instance | BindingFlags.Public);
+            return wantsPlugin?.Invoke(profile, [pluginId]) is not null;
+        }).ToArray();
+        if (matches.Length != 1)
+            throw new InvalidOperationException($"Plugin '{internalName}' belongs to {matches.Length} profiles; exact lifecycle changes require one profile.");
+
+        var update = matches[0].GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .SingleOrDefault(method => method.Name == "AddOrUpdateAsync" && method.GetParameters().Length == 4)
+            ?? throw new InvalidOperationException("Dalamud profile update method was not found.");
+        var task = (Task?)update.Invoke(matches[0], [pluginId, internalName, enabled, false])
+            ?? throw new InvalidOperationException("Dalamud profile update returned no task.");
+        await task.ConfigureAwait(false);
+    }
+
+    private static Task InvokeTask(object target, string methodName)
+    {
+        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new InvalidOperationException($"Dalamud plugin {methodName} method was not found.");
+        return (Task?)method.Invoke(target, null)
+            ?? throw new InvalidOperationException($"Dalamud plugin {methodName} returned no task.");
+    }
+
+    private IExposedPlugin FindRequiredExposed(string internalName, bool enabling, bool? isDev)
     {
         var matches = pluginInterface.InstalledPlugins.Where(plugin =>
             string.Equals(plugin.InternalName, internalName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (isDev is not null)
+            matches = matches.Where(plugin => plugin.IsDev == isDev.Value).ToArray();
         if (matches.Length == 1)
             return matches[0];
         if (matches.Length == 0)
