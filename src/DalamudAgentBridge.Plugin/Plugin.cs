@@ -160,8 +160,8 @@ public sealed class Plugin : IDalamudPlugin
             pluginSurfacePresentation.Begin,
             pluginSurfacePresentation.Restore,
             pluginSurfaceInput.SubmitAsync,
-            async (internalName, enabled, cancellationToken) =>
-                await pluginLifecycle.SetEnabledAsync(internalName, enabled, cancellationToken).ConfigureAwait(false),
+            async (internalName, enabled, isDev, cancellationToken) =>
+                await pluginLifecycle.SetEnabledAsync(internalName, enabled, isDev, cancellationToken).ConfigureAwait(false),
             async (internalName, cancellationToken) =>
                 await pluginInstall.InstallAsync(internalName, cancellationToken).ConfigureAwait(false),
             async (internalName, cancellationToken) =>
