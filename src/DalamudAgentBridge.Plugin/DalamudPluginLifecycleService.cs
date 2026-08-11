@@ -82,7 +82,7 @@ internal sealed class DalamudPluginLifecycleService
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(StateChangeTimeout);
 
-        var plugin = (object)managedPlugin;
+        var plugin = ResolveLocalPlugin(managedPlugin);
         if (enabled)
         {
             await SetProfileStateAsync(plugin, before.InternalName, true).WaitAsync(timeout.Token).ConfigureAwait(false);
@@ -152,10 +152,43 @@ internal sealed class DalamudPluginLifecycleService
 
     private static Task InvokeTask(object target, string methodName)
     {
-        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
+        var method = target.GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .SingleOrDefault(candidate =>
+                candidate.Name == methodName &&
+                candidate.GetParameters().All(parameter => parameter.IsOptional))
             ?? throw new InvalidOperationException($"Dalamud plugin {methodName} method was not found.");
-        return (Task?)method.Invoke(target, null)
+        var arguments = method.GetParameters()
+            .Select(parameter => parameter.DefaultValue is DBNull ? Type.Missing : parameter.DefaultValue)
+            .ToArray();
+        return (Task?)method.Invoke(target, arguments)
             ?? throw new InvalidOperationException($"Dalamud plugin {methodName} returned no task.");
+    }
+
+    private static object ResolveLocalPlugin(IExposedPlugin exposedPlugin)
+    {
+        var candidates = exposedPlugin.GetType()
+            .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Select(field => field.GetValue(exposedPlugin))
+            .Where(value => value is not null && IsLocalPluginType(value.GetType()))
+            .ToArray();
+        return candidates.Length switch
+        {
+            1 => candidates[0]!,
+            0 => throw new InvalidOperationException("Dalamud exposed plugin did not contain its managed plugin instance."),
+            _ => throw new InvalidOperationException("Dalamud exposed plugin contained multiple managed plugin instances."),
+        };
+    }
+
+    private static bool IsLocalPluginType(Type type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (string.Equals(current.FullName, "Dalamud.Plugin.Internal.Types.LocalPlugin", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     private IExposedPlugin FindRequiredExposed(string internalName, bool enabling, bool? isDev)
