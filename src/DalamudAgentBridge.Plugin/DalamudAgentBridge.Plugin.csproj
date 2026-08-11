@@ -22,6 +22,9 @@
     <Error Condition="!Exists('$(FranthropyDalamudProject)')"
       Text="Franthropy.Dalamud project was not found at '$(FranthropyDalamudProject)'. Clone Franthropy beside DalamudAgentBridge or set -p:FranthropyDalamudProject=&quot;path\to\Franthropy.Dalamud.csproj&quot;." />
   </Target>
+  <Target Name="VerifyFranthropyRevision" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\tools\Test-FranthropyDependency.ps1&quot; -FranthropyDalamudProject &quot;$(FranthropyDalamudProject)&quot;" />
+  </Target>
   <ItemGroup>
     <ProjectReference Include="$(FranthropyDalamudProject)" />
     <Content Include="DalamudAgentBridge.json">

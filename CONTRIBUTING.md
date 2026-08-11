@@ -22,6 +22,10 @@ FFXIV-Development/
 ```
 
 The build accepts `FranthropyDalamudProject` when you need a different layout.
+Before building the connector, check out the exact revision recorded in
+`Franthropy.commit` and leave that checkout clean. The connector build verifies
+this receipt automatically, while utility and MCP work remains independent of
+the sibling checkout.
 
 ## Branch and Pull Request Flow
 
