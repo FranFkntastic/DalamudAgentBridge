@@ -17,7 +17,8 @@ Windows runner. Those projects depend only on the focused
 ## Complete maintainer release
 
 The connector must compile against the current Dalamud development
-installation. On a verified Windows development machine:
+installation and the clean Franthropy revision recorded in
+`Franthropy.commit`. On a verified Windows development machine:
 
 ```powershell
 .\tools\Build-Release.ps1 -Version 0.3.0

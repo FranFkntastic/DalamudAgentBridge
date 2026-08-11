@@ -39,6 +39,11 @@ FFXIV-Development/
 ```
 
 Set `FranthropyDalamudProject` at build time if the repositories live elsewhere.
+Connector builds require that checkout to be clean and exactly at the revision
+recorded in `Franthropy.commit`; this makes the bundled patch-sensitive adapter
+reproducible instead of silently consuming whichever sibling revision happens
+to be present. GitHub CI verifies the same receipt against a checkout of that
+commit.
 The utility, CLI, MCP server, and their tests consume the published
 `Franthropy.AgentBridge` package and build from a standalone DAB checkout.
 

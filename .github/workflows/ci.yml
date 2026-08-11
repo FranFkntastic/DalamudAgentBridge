@@ -16,11 +16,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           path: DalamudAgentBridge
+      - uses: actions/checkout@v6
+        with:
+          repository: FranFkntastic/Franthropy
+          ref: ccfbe93284eae172d69afb9209fd539a6df636f4
+          fetch-depth: 1
+          path: Franthropy
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             8.0.x
             10.0.x
+
+      - name: Verify connector dependency receipt
+        working-directory: DalamudAgentBridge
+        shell: pwsh
+        run: .\tools\Test-FranthropyDependency.ps1 -FranthropyDalamudProject ..\Franthropy\src\Franthropy.Dalamud\Franthropy.Dalamud.csproj
 
       - name: Build MCP integration target
         working-directory: DalamudAgentBridge
