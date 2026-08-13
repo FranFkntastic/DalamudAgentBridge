@@ -38,7 +38,7 @@ public sealed class BridgeRegistry
 
     public IReadOnlyList<BridgeInstance> Discover()
     {
-        var instances = new Dictionary<string, BridgeInstance>(StringComparer.OrdinalIgnoreCase);
+        var instances = new Dictionary<string, (BridgeInstance Instance, DateTime UpdatedAtUtc)>(StringComparer.OrdinalIgnoreCase);
         foreach (var pluginConfigRoot in pluginConfigRoots.Where(Directory.Exists))
         foreach (var pluginDirectory in Directory.EnumerateDirectories(pluginConfigRoot))
         {
@@ -52,7 +52,7 @@ public sealed class BridgeRegistry
             foreach (var discoveryPath in Directory.EnumerateFiles(bridgeDirectory, "discovery*.json"))
             {
                 var discovery = ReadDiscovery(discoveryPath);
-                if (discovery == null || !IsProcessAlive(discovery.ProcessId))
+                if (discovery == null || !TryGetCurrentDiscoveryTime(discoveryPath, discovery.ProcessId, out var updatedAtUtc))
                     continue;
                 var token = ReadAccessToken(accessTokenPath, discovery.PluginInstanceId);
                 if (string.IsNullOrWhiteSpace(token))
@@ -60,7 +60,7 @@ public sealed class BridgeRegistry
                 var profile = AgentBridgeProfileIdentity.FromPluginConfigDirectory(pluginDirectory);
 
                 var id = $"{pluginName}-{discovery.ProcessId}";
-                instances[id] = new BridgeInstance
+                var instance = new BridgeInstance
                 {
                     Id = id,
                     PluginName = pluginName,
@@ -76,10 +76,15 @@ public sealed class BridgeRegistry
                     ProfileAlias = discovery.ProfileAlias ?? profile.Alias,
                     ProtocolVersion = discovery.ProtocolVersion,
                 };
+                if (!instances.TryGetValue(id, out var existing) || updatedAtUtc > existing.UpdatedAtUtc)
+                    instances[id] = (instance, updatedAtUtc);
             }
         }
 
-        return instances.Values.OrderBy(instance => instance.PluginName).ThenBy(instance => instance.ProcessId).ToArray();
+        return instances.Values.Select(candidate => candidate.Instance)
+            .OrderBy(instance => instance.PluginName)
+            .ThenBy(instance => instance.ProcessId)
+            .ToArray();
     }
 
     public BridgeInstance? Find(string id) =>
@@ -143,11 +148,16 @@ public sealed class BridgeRegistry
         }
     }
 
-    private static bool IsProcessAlive(int processId)
+    private static bool TryGetCurrentDiscoveryTime(string discoveryPath, int processId, out DateTime updatedAtUtc)
     {
+        updatedAtUtc = default;
         try
         {
-            return !Process.GetProcessById(processId).HasExited;
+            using var process = Process.GetProcessById(processId);
+            if (process.HasExited)
+                return false;
+            updatedAtUtc = File.GetLastWriteTimeUtc(discoveryPath);
+            return updatedAtUtc >= process.StartTime.ToUniversalTime().AddSeconds(-5);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception)
         {
