@@ -75,18 +75,19 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
 
             try
             {
-                var rendered = await pending.Completion.Task
+                var region = await pending.Completion.Task
                     .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
                     .ConfigureAwait(false);
-                using (rendered.Texture)
-                {
-                    return await PersistCaptureAsync(
-                        rendered.Texture,
-                        scope,
-                        "ImGuiDrawList",
-                        rendered.ViewportId,
-                        cancellationToken).ConfigureAwait(false);
-                }
+                using var texture = await CreateViewportRegionTextureAsync(
+                    region,
+                    "Dalamud Agent Bridge plugin window capture",
+                    cancellationToken).ConfigureAwait(false);
+                return await PersistCaptureAsync(
+                    texture,
+                    scope,
+                    "ImGuiViewportRegion",
+                    region.ViewportId,
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (TimeoutException exception)
             {
@@ -120,23 +121,24 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
             var window = ImGuiP.FindWindowByName(new ImU8String(name));
             if (window.IsNull || (!window.Active && !window.WasActive) || window.Hidden)
                 return;
+            if (window.Size.X <= 0f || window.Size.Y <= 0f)
+                throw new InvalidOperationException($"Plugin surface capture bounds are unavailable because '{name}' rendered with zero size.");
 
-            var texture = textureProvider.CreateDrawListTexture("Dalamud Agent Bridge plugin window capture");
-            try
+            var viewport = window.ViewportId == 0
+                ? ImGui.GetMainViewport()
+                : ImGui.FindViewportByID(window.ViewportId);
+            if (viewport.IsNull)
+                throw new InvalidOperationException($"Plugin surface capture viewport 0x{window.ViewportId:X8} is unavailable.");
+
+            pending.Completion.TrySetResult(new(
+                window.Pos,
+                window.Size,
+                viewport.Pos,
+                viewport.Size,
+                DateTimeOffset.UtcNow)
             {
-                texture.ResizeAndDrawWindow(window, System.Numerics.Vector2.One);
-                if (texture.Width <= 0 || texture.Height <= 0)
-                    throw new InvalidOperationException($"Plugin surface capture bounds are unavailable because '{name}' rendered with zero size.");
-                if (!pending.Completion.TrySetResult(new(
-                        texture,
-                        window.ViewportId == 0 ? null : window.ViewportId)))
-                    texture.Dispose();
-            }
-            catch
-            {
-                texture.Dispose();
-                throw;
-            }
+                ViewportId = viewport.ID,
+            });
         }
         catch (Exception exception)
         {
@@ -250,11 +252,42 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
         finally { CryptographicOperations.ZeroMemory(pngBytes); }
     }
 
+    private async Task<IDalamudTextureWrap> CreateViewportRegionTextureAsync(
+        AgentBridgeViewportRegion region,
+        string debugName,
+        CancellationToken cancellationToken)
+    {
+        Task<IDalamudTextureWrap>? textureTask = null;
+        await dispatchOnFramework(() =>
+        {
+            if (!region.IsFresh(TimeSpan.FromSeconds(5), DateTimeOffset.UtcNow))
+                throw new InvalidOperationException("The requested rendered plugin window has no fresh capture bounds.");
+            var viewportId = region.ViewportId ?? ImGui.GetMainViewport().ID;
+            var uvBounds = region.GetUvBounds(0f);
+            textureTask = textureProvider.CreateFromImGuiViewportAsync(new ImGuiViewportTextureArgs
+            {
+                ViewportId = viewportId,
+                AutoUpdate = false,
+                TakeBeforeImGuiRender = false,
+                KeepTransparency = false,
+                Uv0 = uvBounds.Uv0,
+                Uv1 = uvBounds.Uv1,
+            }, debugName, cancellationToken);
+        }).ConfigureAwait(false);
+
+        try
+        {
+            return await (textureTask ?? throw new InvalidOperationException("Plugin window capture was not scheduled.")).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            throw new InvalidOperationException(
+                $"Plugin surface capture viewport 0x{region.ViewportId:X8} is not ready for texture readback.",
+                exception);
+        }
+    }
+
     private sealed record PendingWindowCapture(
         Func<string> WindowName,
-        TaskCompletionSource<RenderedWindowCapture> Completion);
-
-    private sealed record RenderedWindowCapture(
-        IDrawListTextureWrap Texture,
-        uint? ViewportId);
+        TaskCompletionSource<AgentBridgeViewportRegion> Completion);
 }
