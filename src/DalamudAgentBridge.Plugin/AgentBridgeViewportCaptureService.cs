@@ -179,11 +179,7 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
                 {
                     ViewportId = capturedViewportId.Value,
                     AutoUpdate = false,
-                    // Read the previous completed frame before ImGui begins mutating the
-                    // viewport again. A target plugin can throw part-way through Draw();
-                    // asking Dalamud for that viewport after the broken render can leave its
-                    // post-render ViewportTextureWrap callback dereferencing an invalid RTV.
-                    TakeBeforeImGuiRender = true,
+                    TakeBeforeImGuiRender = false,
                     KeepTransparency = false,
                     Uv0 = fullViewport ? default : uvBounds.Uv0,
                     Uv1 = fullViewport ? default : uvBounds.Uv1,
@@ -272,9 +268,7 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
             {
                 ViewportId = viewportId,
                 AutoUpdate = false,
-                // See CaptureAsync: capture the last completed frame, never a viewport whose
-                // current ImGui pass may already have failed and unbalanced its window stack.
-                TakeBeforeImGuiRender = true,
+                TakeBeforeImGuiRender = false,
                 KeepTransparency = false,
                 Uv0 = uvBounds.Uv0,
                 Uv1 = uvBounds.Uv1,

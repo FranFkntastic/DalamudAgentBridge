@@ -47,6 +47,7 @@ public sealed class PluginSurfaceInteractionCaptureService
             captured = await capture.CapturePresentedSurfaceAsync(
                 new BridgeTargetSelector("DalamudAgentBridge", profile, processId),
                 presentation.TransactionId,
+                plugin,
                 cancellationToken).ConfigureAwait(false);
         }
         finally

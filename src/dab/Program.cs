@@ -24,7 +24,7 @@ try
     var deployment = new DevPluginDeploymentService(client);
     var reviewVault = new ReviewVault(configuration);
     var capture = new PluginCaptureService(client, pipe, reviewVault);
-    var surfaceCapture = new PluginSurfaceCaptureService(client, capture);
+    var surfaceCapture = new PluginSurfaceCaptureService(client, new WindowsGraphicsCaptureService(), reviewVault);
     var surfaceInteraction = new PluginSurfaceInteractionCaptureService(client, surfaceCapture);
     object result = commandLine.Command switch
     {
