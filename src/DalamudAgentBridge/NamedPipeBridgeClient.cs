@@ -24,7 +24,7 @@ public sealed class NamedPipeBridgeClient
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(command.ToLowerInvariant() switch
         {
-            "capture-screen" or "capture-plugin-surface" or "interact-plugin-surface" => TimeSpan.FromSeconds(15),
+            "capture-screen" or "capture-plugin-surface" or "measure-plugin-surface-window" or "interact-plugin-surface" => TimeSpan.FromSeconds(15),
             "begin-capture-presentation" => TimeSpan.FromSeconds(10),
             "enable-plugin" or "disable-plugin" => TimeSpan.FromSeconds(25),
             _ => DefaultTimeout,

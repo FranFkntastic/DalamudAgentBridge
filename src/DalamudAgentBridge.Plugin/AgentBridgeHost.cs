@@ -39,6 +39,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation;
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface;
+    private readonly Func<string, CancellationToken, Task<AgentBridgePluginWindowMeasurement>> measurePluginSurfaceWindow;
     private readonly Func<object> createPluginSnapshot;
     private readonly Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog;
     private readonly Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation;
@@ -85,6 +86,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation,
         Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport,
         Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface,
+        Func<string, CancellationToken, Task<AgentBridgePluginWindowMeasurement>> measurePluginSurfaceWindow,
         Func<object> createPluginSnapshot,
         Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog,
         Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation,
@@ -122,6 +124,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.cancelCapturePresentation = cancelCapturePresentation;
         this.captureViewport = captureViewport;
         this.capturePluginSurface = capturePluginSurface;
+        this.measurePluginSurfaceWindow = measurePluginSurfaceWindow;
         this.createPluginSnapshot = createPluginSnapshot;
         this.createPluginSurfaceCatalog = createPluginSurfaceCatalog;
         this.beginPluginSurfacePresentation = beginPluginSurfacePresentation;
@@ -191,7 +194,7 @@ public sealed class AgentBridgeHost : IDisposable
             "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "interact-plugin-surface",
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
             "cancel-capture-presentation", "capture-screen",
-            "capture-plugin-surface",
+            "capture-plugin-surface", "measure-plugin-surface-window",
             "get-situation", "get-navigation", "navigate-to", "cancel-navigation",
             "get-specialists", "start-specialist", "cancel-specialist",
             "send-chat", "get-chat-log",
@@ -403,6 +406,17 @@ public sealed class AgentBridgeHost : IDisposable
                 }
                 catch (OperationCanceledException) { return AgentBridgeResponse.Fail("Presented plugin surface capture timed out."); }
                 catch (Exception exception) { return AgentBridgeResponse.Fail($"Presented plugin surface capture failed: {exception.Message}"); }
+            case "measure-plugin-surface-window":
+                if (string.IsNullOrWhiteSpace(request.TransactionId))
+                    return AgentBridgeResponse.Fail("An active plugin surface presentation transaction is required.");
+                try
+                {
+                    return AgentBridgeResponse.Ok(
+                        "Presented plugin platform window resolved.",
+                        await measurePluginSurfaceWindow(request.TransactionId, cancellationToken).ConfigureAwait(false));
+                }
+                catch (OperationCanceledException) { return AgentBridgeResponse.Fail("Presented plugin platform window measurement timed out."); }
+                catch (Exception exception) { return AgentBridgeResponse.Fail($"Presented plugin platform window measurement failed: {exception.Message}"); }
             case "send-chat":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A chat line is required.");
                 var chatLine = request.Target.Trim();

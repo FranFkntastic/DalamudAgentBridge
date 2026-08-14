@@ -1,5 +1,6 @@
 using Franthropy.Dalamud.AgentBridge;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace DalamudAgentBridge;
 
@@ -10,15 +11,18 @@ namespace DalamudAgentBridge;
 public sealed class PluginSurfaceCaptureService
 {
     private readonly AgentBridgeClient client;
+    private readonly NamedPipeBridgeClient pipe;
     private readonly WindowsGraphicsCaptureService capture;
     private readonly ReviewVault reviewVault;
 
     public PluginSurfaceCaptureService(
         AgentBridgeClient client,
+        NamedPipeBridgeClient pipe,
         WindowsGraphicsCaptureService capture,
         ReviewVault reviewVault)
     {
         this.client = client;
+        this.pipe = pipe;
         this.capture = capture;
         this.reviewVault = reviewVault;
     }
@@ -87,7 +91,28 @@ public sealed class PluginSurfaceCaptureService
         byte[]? pngBytes = null;
         try
         {
-            var captured = await capture.CaptureAsync(instance.ProcessId, cancellationToken).ConfigureAwait(false);
+            var measurementResponse = await pipe.SendAsync(
+                instance,
+                "measure-plugin-surface-window",
+                new BridgeCommandRequest { TransactionId = transactionId },
+                cancellationToken).ConfigureAwait(false);
+            if (!measurementResponse.Success || measurementResponse.Receipt is not { } measurementReceipt)
+                throw new InvalidOperationException(measurementResponse.Message);
+            var measurement = measurementReceipt.Deserialize<PluginSurfaceWindowMeasurement>(new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            {
+                PropertyNameCaseInsensitive = true,
+            }) ?? throw new InvalidOperationException("Plugin platform window measurement was empty.");
+            if (measurement.WindowHandle == 0)
+                throw new InvalidOperationException("Plugin platform window measurement returned an empty handle.");
+
+            var captured = await capture.CaptureWindowAsync(
+                instance.ProcessId,
+                measurement.WindowHandle,
+                measurement.X,
+                measurement.Y,
+                measurement.Width,
+                measurement.Height,
+                cancellationToken).ConfigureAwait(false);
             pngBytes = captured.PngBytes;
             var receipt = new BridgeCaptureReceipt
             {
@@ -100,7 +125,7 @@ public sealed class PluginSurfaceCaptureService
                 Sha256 = Convert.ToHexString(SHA256.HashData(pngBytes)),
                 ProcessId = instance.ProcessId,
                 Scope = "PluginSurface",
-                CaptureMethod = "WindowsGraphicsCapture",
+                CaptureMethod = captured.CaptureMethod,
                 TargetPlugin = targetPlugin,
                 TransactionId = transactionId,
             };
@@ -117,4 +142,11 @@ public sealed class PluginSurfaceCaptureService
                 CryptographicOperations.ZeroMemory(pngBytes);
         }
     }
+
+    private sealed record PluginSurfaceWindowMeasurement(
+        long WindowHandle,
+        int X,
+        int Y,
+        int Width,
+        int Height);
 }

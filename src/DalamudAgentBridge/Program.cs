@@ -102,6 +102,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "restore-plugin-surface-presentation",
     "interact-plugin-surface",
     "capture-plugin-surface",
+    "measure-plugin-surface-window",
     "enable-plugin",
     "disable-plugin",
     "install-plugin",

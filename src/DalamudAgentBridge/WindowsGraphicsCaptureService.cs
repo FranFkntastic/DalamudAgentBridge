@@ -1,5 +1,7 @@
 using Microsoft.Graphics.Canvas;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Windows.Graphics.Capture;
@@ -20,6 +22,31 @@ public sealed class WindowsGraphicsCaptureService
         TimeSpan? timeout = null)
     {
         var windowHandle = ResolveMainWindow(processId);
+        return await CaptureWindowCoreAsync(windowHandle, cancellationToken, timeout).ConfigureAwait(false);
+    }
+
+    public async Task<WindowsGraphicsCapture> CaptureWindowAsync(
+        int processId,
+        long windowHandle,
+        int x,
+        int y,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        var handle = (nint)windowHandle;
+        ValidateWindowOwnership(processId, handle);
+        ValidateDimensions(width, height, "plugin surface region");
+        return await Task.Run(
+            () => CaptureRenderedWindowRegion(handle, x, y, width, height, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<WindowsGraphicsCapture> CaptureWindowCoreAsync(
+        nint windowHandle,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout)
+    {
         GraphicsCaptureItem item;
         try { item = CaptureItemFactory.CreateForWindow(windowHandle); }
         catch (Exception ex) when (ex is COMException or InvalidCastException)
@@ -29,7 +56,22 @@ public sealed class WindowsGraphicsCaptureService
                 "Windows Graphics Capture could not create a capture item for the target window.", ex);
         }
 
-        ValidateDimensions(item.Size.Width, item.Size.Height, "target window");
+        return await CaptureItemCoreAsync(
+            item,
+            "target window",
+            "WindowsGraphicsCapture",
+            cancellationToken,
+            timeout).ConfigureAwait(false);
+    }
+
+    private static async Task<WindowsGraphicsCapture> CaptureItemCoreAsync(
+        GraphicsCaptureItem item,
+        string source,
+        string captureMethod,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout)
+    {
+        ValidateDimensions(item.Size.Width, item.Size.Height, source);
         using var device = CanvasDevice.GetSharedDevice();
         using var framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(
             device, DirectXPixelFormat.B8G8R8A8UIntNormalized, 1, item.Size);
@@ -74,7 +116,7 @@ public sealed class WindowsGraphicsCaptureService
                         WindowsGraphicsCaptureFailure.InvalidFrame,
                         "Windows Graphics Capture returned an incomplete encoded frame.");
                 reader.ReadBytes(bytes);
-                return new WindowsGraphicsCapture(bytes, width, height);
+                return new WindowsGraphicsCapture(bytes, width, height, captureMethod);
             }
             catch
             {
@@ -124,6 +166,80 @@ public sealed class WindowsGraphicsCaptureService
         }
     }
 
+    internal static void ValidateWindowOwnership(int processId, nint windowHandle)
+    {
+        if (processId <= 0)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidProcess, "The target process ID is invalid.");
+        if (windowHandle == nint.Zero)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.MainWindowUnavailable, "The target window handle is unavailable.");
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            if (process.HasExited)
+                throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.ProcessNotRunning, "The target process is not running.");
+            GetWindowThreadProcessId(windowHandle, out var ownerProcessId);
+            if (ownerProcessId != processId)
+                throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.WindowOwnershipMismatch, "The target window ownership could not be verified.");
+        }
+        catch (ArgumentException ex)
+        {
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.ProcessNotRunning, "The target process is not running.", ex);
+        }
+    }
+
+    private static WindowsGraphicsCapture CaptureRenderedWindowRegion(
+        nint windowHandle,
+        int x,
+        int y,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsWindowVisible(windowHandle) || IsIconic(windowHandle))
+            throw new WindowsGraphicsCaptureException(
+                WindowsGraphicsCaptureFailure.TargetUnsupported,
+                "The plugin platform window is not visibly presented for rendering.");
+        if (!GetWindowRect(windowHandle, out var bounds))
+            throw new WindowsGraphicsCaptureException(
+                WindowsGraphicsCaptureFailure.InvalidFrame,
+                "The plugin platform window bounds could not be read.");
+
+        var platformWidth = bounds.Right - bounds.Left;
+        var platformHeight = bounds.Bottom - bounds.Top;
+        ValidateDimensions(platformWidth, platformHeight, "plugin platform window");
+        if (x < 0 || y < 0 || x + width > platformWidth || y + height > platformHeight)
+            throw new WindowsGraphicsCaptureException(
+                WindowsGraphicsCaptureFailure.InvalidFrame,
+                "The requested plugin surface region is outside its rendered platform window.");
+
+        using var platformBitmap = new Bitmap(platformWidth, platformHeight, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(platformBitmap))
+        {
+            var deviceContext = graphics.GetHdc();
+            try
+            {
+                if (!PrintWindow(windowHandle, deviceContext, 2))
+                    throw new WindowsGraphicsCaptureException(
+                        WindowsGraphicsCaptureFailure.CaptureFailed,
+                        "The plugin platform window did not render into the isolated capture surface.");
+            }
+            finally
+            {
+                graphics.ReleaseHdc(deviceContext);
+            }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        using var croppedBitmap = platformBitmap.Clone(new Rectangle(x, y, width, height), PixelFormat.Format32bppArgb);
+        using var output = new MemoryStream();
+        croppedBitmap.Save(output, ImageFormat.Png);
+        if (output.Length is 0 or > int.MaxValue)
+            throw new WindowsGraphicsCaptureException(
+                WindowsGraphicsCaptureFailure.InvalidFrame,
+                "The isolated plugin surface render produced an invalid encoded frame size.");
+        return new WindowsGraphicsCapture(output.ToArray(), width, height, "PrintWindowRenderFullContent");
+    }
+
     private static void ValidateDimensions(int width, int height, string source)
     {
         if (width is < 1 or > MaximumDimension || height is < 1 or > MaximumDimension)
@@ -132,6 +248,28 @@ public sealed class WindowsGraphicsCaptureService
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint windowHandle, out int processId);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(nint windowHandle, out WindowRect bounds);
+
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(nint windowHandle, nint deviceContext, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(nint windowHandle);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(nint windowHandle);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
 
     private static class CaptureItemFactory
     {
@@ -161,7 +299,7 @@ public sealed class WindowsGraphicsCaptureService
     }
 }
 
-public sealed record WindowsGraphicsCapture(byte[] PngBytes, int Width, int Height);
+public sealed record WindowsGraphicsCapture(byte[] PngBytes, int Width, int Height, string CaptureMethod);
 
 public enum WindowsGraphicsCaptureFailure
 {

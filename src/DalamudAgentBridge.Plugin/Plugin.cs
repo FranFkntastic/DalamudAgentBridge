@@ -155,6 +155,9 @@ public sealed class Plugin : IDalamudPlugin
                 () => pluginSurfacePresentation.GetCaptureWindowName(transactionId),
                 "PluginSurface",
                 cancellationToken),
+            (transactionId, cancellationToken) => viewportCapture.MeasureWindowAsync(
+                () => pluginSurfacePresentation.GetCaptureWindowName(transactionId),
+                cancellationToken),
             () => pluginLifecycle.Snapshot(),
             target => pluginSurfaceDiscovery.Snapshot(target),
             pluginSurfacePresentation.Begin,

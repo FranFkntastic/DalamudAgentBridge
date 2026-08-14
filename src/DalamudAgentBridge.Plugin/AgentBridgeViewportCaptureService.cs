@@ -75,24 +75,72 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
 
             try
             {
-                var region = await pending.Completion.Task
+                var measurement = await pending.Completion.Task
                     .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
                     .ConfigureAwait(false);
                 using var texture = await CreateViewportRegionTextureAsync(
-                    region,
+                    measurement.Region,
                     "Dalamud Agent Bridge plugin window capture",
                     cancellationToken).ConfigureAwait(false);
                 return await PersistCaptureAsync(
                     texture,
                     scope,
                     "ImGuiViewportRegion",
-                    region.ViewportId,
+                    measurement.Region.ViewportId,
                     cancellationToken).ConfigureAwait(false);
             }
             catch (TimeoutException exception)
             {
                 throw new InvalidOperationException(
                     "Plugin surface capture bounds were not rendered during the two-second ImGui draw lease.",
+                    exception);
+            }
+            finally
+            {
+                lock (pendingWindowGate)
+                {
+                    if (ReferenceEquals(pendingWindowCapture, pending))
+                        pendingWindowCapture = null;
+                }
+            }
+        }
+        finally { captureLock.Release(); }
+    }
+
+    public async Task<AgentBridgePluginWindowMeasurement> MeasureWindowAsync(
+        Func<string> windowName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(windowName);
+        await captureLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var pending = new PendingWindowCapture(
+                windowName,
+                new(TaskCreationOptions.RunContinuationsAsynchronously));
+            lock (pendingWindowGate)
+            {
+                if (pendingWindowCapture is not null)
+                    throw new InvalidOperationException("A plugin window measurement is already waiting for an ImGui draw frame.");
+                pendingWindowCapture = pending;
+            }
+
+            try
+            {
+                var measurement = await pending.Completion.Task
+                    .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
+                    .ConfigureAwait(false);
+                return new(
+                    measurement.WindowHandle,
+                    (int)MathF.Round(measurement.Region.WindowPosition.X - measurement.Region.ViewportPosition.X),
+                    (int)MathF.Round(measurement.Region.WindowPosition.Y - measurement.Region.ViewportPosition.Y),
+                    (int)MathF.Round(measurement.Region.WindowSize.X),
+                    (int)MathF.Round(measurement.Region.WindowSize.Y));
+            }
+            catch (TimeoutException exception)
+            {
+                throw new InvalidOperationException(
+                    "Plugin surface window ownership was not rendered during the two-second ImGui draw lease.",
                     exception);
             }
             finally
@@ -129,16 +177,21 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
                 : ImGui.FindViewportByID(window.ViewportId);
             if (viewport.IsNull)
                 throw new InvalidOperationException($"Plugin surface capture viewport 0x{window.ViewportId:X8} is unavailable.");
+            var windowHandle = (nint)viewport.PlatformHandleRaw;
+            if (windowHandle == nint.Zero)
+                throw new InvalidOperationException($"Plugin surface capture viewport 0x{viewport.ID:X8} has no platform window handle.");
 
             pending.Completion.TrySetResult(new(
-                window.Pos,
-                window.Size,
-                viewport.Pos,
-                viewport.Size,
-                DateTimeOffset.UtcNow)
-            {
-                ViewportId = viewport.ID,
-            });
+                windowHandle,
+                new(
+                    window.Pos,
+                    window.Size,
+                    viewport.Pos,
+                    viewport.Size,
+                    DateTimeOffset.UtcNow)
+                {
+                    ViewportId = viewport.ID,
+                }));
         }
         catch (Exception exception)
         {
@@ -289,5 +342,16 @@ public sealed class AgentBridgeViewportCaptureService : IDisposable
 
     private sealed record PendingWindowCapture(
         Func<string> WindowName,
-        TaskCompletionSource<AgentBridgeViewportRegion> Completion);
+        TaskCompletionSource<PluginWindowMeasurement> Completion);
+
+    private sealed record PluginWindowMeasurement(
+        nint WindowHandle,
+        AgentBridgeViewportRegion Region);
 }
+
+public sealed record AgentBridgePluginWindowMeasurement(
+    long WindowHandle,
+    int X,
+    int Y,
+    int Width,
+    int Height);
