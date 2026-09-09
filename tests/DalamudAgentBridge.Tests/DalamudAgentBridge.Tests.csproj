@@ -31,5 +31,7 @@
               Link="NativeSlashCommandPolicy.cs" />
     <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NavigationRequestPolicy.cs"
               Link="NavigationRequestPolicy.cs" />
+    <Compile Include="..\..\src\DalamudAgentBridge.Plugin\PenumbraCrashReporterService.cs"
+              Link="PenumbraCrashReporterService.cs" />
   </ItemGroup>
 </Project>

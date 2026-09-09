@@ -69,6 +69,20 @@ current-user bridge; no port, token, or consumer-plugin configuration is require
 
 ## Run
 
+### Penumbra crash logging
+
+The connector snapshot includes `penumbraCrashReporter`: availability, the saved
+enabled setting, actual running state, Penumbra version/instance, game and reporter
+process IDs, and the output log path. Unsupported or unloaded Penumbra reports
+unavailable with unknown state, not a misleading disabled value.
+
+The connector window exposes the reviewed action
+`penumbra.crash-reporter.enabled`. It uses Penumbra's own persistent setting and
+verifies the resulting reporter state; it does not reload Penumbra, change mods,
+or require general plugin-window input permission. Reviews are rejected if the
+Penumbra instance or setting changes before invocation. The adapter is compatible
+with Penumbra's 1.7.0.12 service layout and fails closed on unsupported layouts.
+
 ```powershell
 .\Run-Bridge.ps1
 ```

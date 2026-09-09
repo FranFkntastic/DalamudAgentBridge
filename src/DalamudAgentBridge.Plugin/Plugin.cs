@@ -41,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AgentBridgeViewportCaptureService viewportCapture;
     private readonly AgentBridgeHost bridgeHost;
     private readonly DalamudPluginLifecycleService pluginLifecycle;
+    private readonly PenumbraCrashReporterService penumbraCrashReporter;
     private readonly DalamudPluginInstallService pluginInstall;
     private readonly DalamudPluginDevInstallService pluginDevInstall;
     private readonly DalamudPluginSurfaceDiscoveryService pluginSurfaceDiscovery;
@@ -81,6 +82,14 @@ public sealed class Plugin : IDalamudPlugin
         ITextureReadbackProvider textureReadbackProvider)
     {
         this.pluginInterface = pluginInterface;
+        penumbraCrashReporter = new(() =>
+        {
+            var matches = pluginInterface.InstalledPlugins.Where(p => p.InternalName == "Penumbra" && p.IsLoaded).ToArray();
+            if (matches.Length != 1)
+                throw new InvalidOperationException("Exactly one loaded Penumbra instance is required.");
+            return DalamudPluginSurfaceDiscoveryService.TryGetPluginInstance(matches[0])
+                ?? throw new InvalidOperationException("The loaded Penumbra instance is unavailable.");
+        });
         this.commandManager = commandManager;
         this.playerState = playerState;
         this.framework = framework;
@@ -414,6 +423,7 @@ public sealed class Plugin : IDalamudPlugin
         DrawRow("Navigation", configuration.EnableNavigation ? "Enabled - explicit same-territory requests" : "Disabled");
         DrawRow("Specialists", configuration.EnableSpecialistAutomation ? "Enabled - reviewed plugin adapters" : "Disabled");
         ImGui.Spacing();
+        DrawPenumbraCrashReporter();
         ImGui.TextUnformatted("Permissions");
         ImGui.Separator();
         var screenshotsEnabled = configuration.EnableScreenshots;
@@ -486,6 +496,32 @@ public sealed class Plugin : IDalamudPlugin
         configuration.Save();
     }
 
+    private void DrawPenumbraCrashReporter()
+    {
+        var status = penumbraCrashReporter.Snapshot();
+        var enabled = status.Enabled ?? false;
+        ImGui.BeginDisabled(!status.Available);
+        if (ImGui.Checkbox("Enable Penumbra crash logging", ref enabled))
+            penumbraCrashReporter.SetEnabled(enabled, status.InstanceId!, status.Enabled ?? false);
+        reviewRegistry.Register(
+            "penumbra.crash-reporter.enabled", "Enable Penumbra crash logging",
+            AgentBridgeUiControlKind.Toggle, ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
+            status.Available, status.Enabled ?? false,
+            status.Error ?? (status.Running == true ? "Running" : "Stopped"),
+            arguments: null, surfaceId: "bridge.main-window", mutating: true,
+            completionOperationKind: null, _ =>
+            {
+                var after = penumbraCrashReporter.SetEnabled(!(status.Enabled ?? false), status.InstanceId!, status.Enabled ?? false);
+                return AgentBridgeUiActionResult.Ok(after.Running == true ? "Penumbra crash reporter running." : "Penumbra crash reporter stopped.");
+            });
+        ImGui.EndDisabled();
+        if (status.Error is not null)
+            ImGui.TextDisabled(status.Error);
+        else
+            DrawRow("Crash reporter", status.Running == true ? $"Running (PID {status.ReporterProcessId})" : "Stopped");
+        ImGui.Spacing();
+    }
+
     private static void DrawRow(string label, string value)
     {
         ImGui.TextDisabled($"{label}:");
@@ -501,6 +537,7 @@ public sealed class Plugin : IDalamudPlugin
         characterName = playerState.CharacterName ?? "Unavailable",
         currentWorld = playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ToString() : "Unavailable",
         bridgeWindowOpen = WindowOpen,
+        penumbraCrashReporter = penumbraCrashReporter.Snapshot(),
         client = CreateClientSnapshot(),
         reviewFrameId = reviewRegistry.Snapshot().FrameId,
         capabilities = new[] { "open-main-window", "present-surface", "get-plugin-surfaces", "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "interact-plugin-surface", "capture-screen", "full-viewport-capture", "get-control-surface", "get-control", "invoke-control", "capture-presentation-transaction", "get-login-ui", "get-character-provisioning", "begin-login", "list-plugins", "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "get-client-snapshot", "get-situation", "navigate-to", "get-navigation", "cancel-navigation", "get-specialists", "start-specialist", "cancel-specialist", "send-chat", "get-chat-log" },
