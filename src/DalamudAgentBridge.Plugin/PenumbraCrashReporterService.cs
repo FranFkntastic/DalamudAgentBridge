@@ -24,11 +24,11 @@ internal sealed class PenumbraCrashReporterService(Func<object> resolveInstance)
         }
     }
 
-    public PenumbraCrashReporterSnapshot SetEnabled(bool enabled, string expectedInstanceId, bool expectedEnabled)
+    public PenumbraCrashReporterSnapshot SetEnabled(bool enabled, string expectedInstanceId, bool? expectedEnabled)
     {
         var target = Resolve();
         var before = Read(target);
-        if (before.InstanceId != expectedInstanceId || (before.Enabled ?? false) != expectedEnabled)
+        if (before.InstanceId != expectedInstanceId || before.Enabled != expectedEnabled)
             throw new InvalidOperationException("Penumbra changed since review; obtain a fresh reporter review.");
 
         // This is the same setter used by Penumbra's settings checkbox. It persists

@@ -507,7 +507,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             try
             {
-                penumbraCrashReporter.SetEnabled(enabled, status.InstanceId!, status.Enabled ?? false);
+                penumbraCrashReporter.SetEnabled(enabled, status.InstanceId!, status.Enabled);
                 penumbraCrashReporterError = null;
             }
             catch (Exception ex)
@@ -524,7 +524,7 @@ public sealed class Plugin : IDalamudPlugin
             arguments: null, surfaceId: "bridge.main-window", mutating: true,
             completionOperationKind: null, _ =>
             {
-                var after = penumbraCrashReporter.SetEnabled(!(status.Enabled ?? false), status.InstanceId!, status.Enabled ?? false);
+                var after = penumbraCrashReporter.SetEnabled(!(status.Enabled ?? false), status.InstanceId!, status.Enabled);
                 penumbraCrashReporterError = null;
                 return AgentBridgeUiActionResult.Ok(after.Running == true ? "Penumbra crash reporter running." : "Penumbra crash reporter stopped.");
             });

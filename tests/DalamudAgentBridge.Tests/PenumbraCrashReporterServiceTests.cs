@@ -13,7 +13,7 @@ namespace DalamudAgentBridge.Tests
             var before = adapter.Snapshot();
             Assert.True(before.Available);
             Assert.Null(before.Enabled);
-            var after = adapter.SetEnabled(true, before.InstanceId!, false);
+            var after = adapter.SetEnabled(true, before.InstanceId!, before.Enabled);
             Assert.True(after.Enabled);
             Assert.True(after.Running);
             Assert.Equal(1, plugin.Config.Advanced.Writes);
@@ -37,7 +37,7 @@ namespace DalamudAgentBridge.Tests
             var adapter = new PenumbraCrashReporterService(() => plugin);
             var before = adapter.Snapshot();
             plugin = new Penumbra.Penumbra();
-            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, false));
+            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, before.Enabled));
             Assert.Equal(0, plugin.Config.Advanced.Writes);
         }
 
@@ -71,7 +71,7 @@ namespace DalamudAgentBridge.Tests
             var adapter = new PenumbraCrashReporterService(() => plugin);
             var before = adapter.Snapshot();
             plugin.Config.Advanced.UseCrashHandler = true;
-            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, false));
+            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, before.Enabled));
             Assert.True(plugin.Service.IsRunning);
         }
 
@@ -82,8 +82,24 @@ namespace DalamudAgentBridge.Tests
             plugin.Service.FailStart = true;
             var adapter = new PenumbraCrashReporterService(() => plugin);
             var before = adapter.Snapshot();
-            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, false));
+            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, before.Enabled));
             Assert.False(adapter.Snapshot().Running);
+        }
+
+        [Theory]
+        [InlineData(null, false)]
+        [InlineData(false, null)]
+        public void UnsetAndExplicitlyDisabledAreDistinctReviewStates(bool? original, bool? changed)
+        {
+            var plugin = new Penumbra.Penumbra();
+            plugin.Config.Advanced.UseCrashHandler = original;
+            var adapter = new PenumbraCrashReporterService(() => plugin);
+            var before = adapter.Snapshot();
+            plugin.Config.Advanced.UseCrashHandler = changed;
+            var writes = plugin.Config.Advanced.Writes;
+            Assert.Throws<InvalidOperationException>(() => adapter.SetEnabled(true, before.InstanceId!, before.Enabled));
+            Assert.Equal(changed, plugin.Config.Advanced.UseCrashHandler);
+            Assert.Equal(writes, plugin.Config.Advanced.Writes);
         }
     }
 }
