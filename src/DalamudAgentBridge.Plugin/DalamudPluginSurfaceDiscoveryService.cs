@@ -131,7 +131,7 @@ internal sealed class DalamudPluginSurfaceDiscoveryService
             plugin.IsLoaded,
             runtimeInstanceId);
 
-    private static object? TryGetPluginInstance(IExposedPlugin exposed)
+    internal static object? TryGetPluginInstance(IExposedPlugin exposed)
     {
         try
         {
