@@ -496,13 +496,26 @@ public sealed class Plugin : IDalamudPlugin
         configuration.Save();
     }
 
+    private string? penumbraCrashReporterError;
+
     private void DrawPenumbraCrashReporter()
     {
         var status = penumbraCrashReporter.Snapshot();
         var enabled = status.Enabled ?? false;
         ImGui.BeginDisabled(!status.Available);
         if (ImGui.Checkbox("Enable Penumbra crash logging", ref enabled))
-            penumbraCrashReporter.SetEnabled(enabled, status.InstanceId!, status.Enabled ?? false);
+        {
+            try
+            {
+                penumbraCrashReporter.SetEnabled(enabled, status.InstanceId!, status.Enabled ?? false);
+                penumbraCrashReporterError = null;
+            }
+            catch (Exception ex)
+            {
+                // Keep the ImGui stack balanced even when Penumbra cannot start its reporter.
+                penumbraCrashReporterError = ex.GetBaseException().Message;
+            }
+        }
         reviewRegistry.Register(
             "penumbra.crash-reporter.enabled", "Enable Penumbra crash logging",
             AgentBridgeUiControlKind.Toggle, ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
@@ -512,9 +525,12 @@ public sealed class Plugin : IDalamudPlugin
             completionOperationKind: null, _ =>
             {
                 var after = penumbraCrashReporter.SetEnabled(!(status.Enabled ?? false), status.InstanceId!, status.Enabled ?? false);
+                penumbraCrashReporterError = null;
                 return AgentBridgeUiActionResult.Ok(after.Running == true ? "Penumbra crash reporter running." : "Penumbra crash reporter stopped.");
             });
         ImGui.EndDisabled();
+        if (penumbraCrashReporterError is not null)
+            ImGui.TextDisabled(penumbraCrashReporterError);
         if (status.Error is not null)
             ImGui.TextDisabled(status.Error);
         else
