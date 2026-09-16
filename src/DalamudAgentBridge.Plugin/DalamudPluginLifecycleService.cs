@@ -1,11 +1,13 @@
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Franthropy.Dalamud.AgentBridge;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,6 +19,7 @@ internal sealed class DalamudPluginLifecycleService
     private readonly IDalamudPluginInterface pluginInterface;
     private readonly ICommandManager commandManager;
     private readonly IFramework framework;
+    private readonly ConditionalWeakTable<Assembly, AgentBridgeRuntimeIdentity> runtimeIdentities = new();
 
     public DalamudPluginLifecycleService(
         IDalamudPluginInterface pluginInterface,
@@ -26,14 +29,52 @@ internal sealed class DalamudPluginLifecycleService
         this.pluginInterface = pluginInterface;
         this.commandManager = commandManager;
         this.framework = framework;
+        PrimeLoadedRuntimeIdentities();
     }
 
-    public PluginLifecycleSnapshot Snapshot() => new(
-        DateTimeOffset.UtcNow,
-        pluginInterface.InstalledPlugins
+    public PluginLifecycleSnapshot Snapshot()
+    {
+        PrimeLoadedRuntimeIdentities();
+        return new(
+            DateTimeOffset.UtcNow,
+            pluginInterface.InstalledPlugins
             .OrderBy(plugin => plugin.InternalName, StringComparer.OrdinalIgnoreCase)
             .Select(ToState)
             .ToArray());
+    }
+
+    public LoadedPluginRuntimeIdentity GetRuntimeIdentity(string internalName, bool? isDev)
+    {
+        var exposedPlugin = FindRequiredExposed(internalName, enabling: false, isDev);
+        if (!exposedPlugin.IsLoaded)
+            throw new InvalidOperationException($"Plugin '{internalName}' is installed but not loaded.");
+
+        return GetOrCreateRuntimeIdentity(exposedPlugin);
+    }
+
+    private LoadedPluginRuntimeIdentity GetOrCreateRuntimeIdentity(IExposedPlugin exposedPlugin)
+    {
+        var localPlugin = ResolveLocalPlugin(exposedPlugin);
+        var localPluginType = localPlugin.GetType();
+        var assembly = localPluginType.GetProperty("Assembly", BindingFlags.Instance | BindingFlags.Public)?.GetValue(localPlugin) as Assembly
+            ?? throw new InvalidOperationException($"Loaded assembly identity for plugin '{exposedPlugin.InternalName}' is unavailable.");
+        var dllFile = localPluginType.GetProperty("DllFile", BindingFlags.Instance | BindingFlags.Public)?.GetValue(localPlugin) as System.IO.FileInfo
+            ?? throw new InvalidOperationException($"Loaded DLL path for plugin '{exposedPlugin.InternalName}' is unavailable.");
+
+        var runtime = runtimeIdentities.GetValue(
+            assembly,
+            loadedAssembly => AgentBridgeRuntimeIdentity.FromAssembly(exposedPlugin.InternalName, loadedAssembly, dllFile.FullName));
+        return new LoadedPluginRuntimeIdentity(runtime, assembly.ManifestModule.ModuleVersionId);
+    }
+
+    private void PrimeLoadedRuntimeIdentities()
+    {
+        foreach (var plugin in pluginInterface.InstalledPlugins.Where(plugin => plugin.IsLoaded))
+        {
+            try { _ = GetOrCreateRuntimeIdentity(plugin); }
+            catch { /* One opaque plugin must not prevent DAB from serving other runtime identities. */ }
+        }
+    }
 
     public async Task<PluginLifecycleChangeReceipt> SetEnabledAsync(
         string internalName,
@@ -241,6 +282,8 @@ internal sealed class DalamudPluginLifecycleService
 
     private static string EscapeArgument(string value) => value.Replace("\"", string.Empty, StringComparison.Ordinal);
 }
+
+internal sealed record LoadedPluginRuntimeIdentity(AgentBridgeRuntimeIdentity Runtime, Guid ModuleVersionId);
 
 internal sealed record PluginLifecycleSnapshot(DateTimeOffset CapturedAtUtc, IReadOnlyList<PluginLifecycleState> Plugins);
 
