@@ -97,6 +97,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "get-control",
     "invoke-control",
     "list-plugins",
+    "get-plugin-runtime",
     "get-plugin-surfaces",
     "begin-plugin-surface-presentation",
     "restore-plugin-surface-presentation",

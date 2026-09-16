@@ -5,7 +5,7 @@ param(
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',
         'open-main-window', 'close-main-window', 'select-main-tab',
-        'list-plugins',
+        'list-plugins', 'get-plugin-runtime',
         'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin',
         'get-situation', 'get-navigation', 'navigate-to', 'cancel-navigation',
         'get-specialists', 'start-specialist', 'cancel-specialist',

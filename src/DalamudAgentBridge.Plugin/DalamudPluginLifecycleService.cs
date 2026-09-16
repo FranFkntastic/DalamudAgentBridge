@@ -1,6 +1,7 @@
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Franthropy.Dalamud.AgentBridge;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -34,6 +35,22 @@ internal sealed class DalamudPluginLifecycleService
             .OrderBy(plugin => plugin.InternalName, StringComparer.OrdinalIgnoreCase)
             .Select(ToState)
             .ToArray());
+
+    public AgentBridgeRuntimeIdentity GetRuntimeIdentity(string internalName, bool? isDev)
+    {
+        var exposedPlugin = FindRequiredExposed(internalName, enabling: false, isDev);
+        if (!exposedPlugin.IsLoaded)
+            throw new InvalidOperationException($"Plugin '{internalName}' is installed but not loaded.");
+
+        var localPlugin = ResolveLocalPlugin(exposedPlugin);
+        var localPluginType = localPlugin.GetType();
+        var assembly = localPluginType.GetProperty("Assembly", BindingFlags.Instance | BindingFlags.Public)?.GetValue(localPlugin) as Assembly
+            ?? throw new InvalidOperationException($"Loaded assembly identity for plugin '{internalName}' is unavailable.");
+        var dllFile = localPluginType.GetProperty("DllFile", BindingFlags.Instance | BindingFlags.Public)?.GetValue(localPlugin) as System.IO.FileInfo
+            ?? throw new InvalidOperationException($"Loaded DLL path for plugin '{internalName}' is unavailable.");
+
+        return AgentBridgeRuntimeIdentity.FromAssembly(exposedPlugin.InternalName, assembly, dllFile.FullName);
+    }
 
     public async Task<PluginLifecycleChangeReceipt> SetEnabledAsync(
         string internalName,

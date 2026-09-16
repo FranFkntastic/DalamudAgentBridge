@@ -40,6 +40,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface;
     private readonly Func<object> createPluginSnapshot;
+    private readonly Func<string, bool?, object> getPluginRuntimeIdentity;
     private readonly Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog;
     private readonly Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation;
     private readonly Func<string, AgentBridgePluginSurfacePresentationResult> restorePluginSurfacePresentation;
@@ -86,6 +87,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport,
         Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface,
         Func<object> createPluginSnapshot,
+        Func<string, bool?, object> getPluginRuntimeIdentity,
         Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog,
         Func<string, AgentBridgePluginSurfacePresentationReceipt> beginPluginSurfacePresentation,
         Func<string, AgentBridgePluginSurfacePresentationResult> restorePluginSurfacePresentation,
@@ -123,6 +125,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.captureViewport = captureViewport;
         this.capturePluginSurface = capturePluginSurface;
         this.createPluginSnapshot = createPluginSnapshot;
+        this.getPluginRuntimeIdentity = getPluginRuntimeIdentity;
         this.createPluginSurfaceCatalog = createPluginSurfaceCatalog;
         this.beginPluginSurfacePresentation = beginPluginSurfacePresentation;
         this.restorePluginSurfacePresentation = restorePluginSurfacePresentation;
@@ -167,7 +170,7 @@ public sealed class AgentBridgeHost : IDisposable
             $"{runtimeIdentity.PluginInternalName}.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"),
-                new("plugin-lifecycle"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
+                new("plugin-lifecycle"), new("plugin-runtime-identity"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
                 new("situation", 2), new("navigation"), new("specialist-cockpit"), new("penumbra-crash-reporter"),
             ],
             surfaceRegistry.Snapshot(),
@@ -186,7 +189,7 @@ public sealed class AgentBridgeHost : IDisposable
         string[] commands =
         [
             "get-snapshot", "get-client-snapshot", "get-control-surface", "get-control", "invoke-control", "get-review-surfaces",
-            "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "begin-login", "list-plugins",
+            "open-main-window", "present-surface", "get-capture-surfaces", "get-login-ui", "begin-login", "list-plugins", "get-plugin-runtime",
             "get-plugin-surfaces",
             "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "interact-plugin-surface",
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
@@ -336,6 +339,30 @@ public sealed class AgentBridgeHost : IDisposable
                     : new AgentBridgeResponse { Success = false, Message = login.Message, Receipt = login };
             case "list-plugins":
                 return AgentBridgeResponse.Ok("Installed plugin state captured.", await OnFrameworkAsync(createPluginSnapshot).ConfigureAwait(false));
+            case "get-plugin-runtime":
+                if (string.IsNullOrWhiteSpace(request.Target))
+                    return AgentBridgeResponse.Fail("A plugin internal name is required.");
+                bool? runtimeIsDev = null;
+                if (request.Arguments is { } runtimeArguments)
+                {
+                    if (runtimeArguments.ValueKind is not JsonValueKind.Object)
+                        return AgentBridgeResponse.Fail("Plugin runtime selector arguments must be an object.");
+                    if (runtimeArguments.TryGetProperty("isDev", out var isDevValue))
+                    {
+                        if (isDevValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            return AgentBridgeResponse.Fail("Plugin selector 'isDev' must be a boolean.");
+                        runtimeIsDev = isDevValue.GetBoolean();
+                    }
+                }
+                try
+                {
+                    var identity = await OnFrameworkAsync(() => getPluginRuntimeIdentity(request.Target, runtimeIsDev)).ConfigureAwait(false);
+                    return AgentBridgeResponse.Ok("Loaded plugin runtime identity captured.", identity);
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
+                {
+                    return AgentBridgeResponse.Fail($"Plugin runtime identity is unavailable: {exception.Message}");
+                }
             case "enable-plugin":
             case "disable-plugin":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A plugin internal name is required.");
