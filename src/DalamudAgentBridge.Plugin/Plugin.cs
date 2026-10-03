@@ -198,7 +198,7 @@ public sealed class Plugin : IDalamudPlugin
                 PluginConfigDirectory = pluginInterface.GetPluginConfigDirectory(),
                 PluginName = pluginInterface.Manifest.InternalName,
                 PluginInstanceId = Guid.NewGuid().ToString("N"),
-                GameBuild = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion(),
+                GameBuild = Franthropy.Dalamud.Diagnostics.GameClientVersion.ReadCurrentGameVersion(),
                 GameInventory = gameInventory,
                 PlayerState = playerState,
                 AddonLifecycle = addonLifecycle,
@@ -608,18 +608,15 @@ public sealed class Plugin : IDalamudPlugin
         ];
         var addons = addonNames.Select(renderedTextActions.CaptureVisibleText).ToArray();
         var playerAvailable = !string.IsNullOrWhiteSpace(playerState.CharacterName);
-        var gameVersion = Franthropy.Dalamud.Diagnostics.GamePatchCompatibilityGate.ReadCurrentGameVersion();
+        var gameVersion = Franthropy.Dalamud.Diagnostics.GameClientVersion.ReadCurrentGameVersion();
         var stage = CharacterCreationStageDetector.Detect(
             addons.Where(value => value.Available).Select(value => value.AddonName),
-            playerAvailable,
-            gameVersion,
-            CharacterProvisioningDefaults.ApprovedGameVersion);
+            playerAvailable);
         return new
         {
             schemaVersion = CharacterProvisioningDefaults.SchemaVersion,
             capturedAtUtc = DateTimeOffset.UtcNow,
             gameVersion,
-            approvedGameVersion = CharacterProvisioningDefaults.ApprovedGameVersion,
             playerAvailable,
             stage,
             selection = CaptureCharacterProvisioningSelection(),
