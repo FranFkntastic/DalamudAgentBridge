@@ -3,6 +3,6 @@
   <PropertyGroup>
     <FranthropySource Condition="'$(FranthropySource)' == ''">Package</FranthropySource>
     <FranthropyFeed Condition="'$(FranthropyFeed)' == ''">$(LOCALAPPDATA)/Franthropy/packages</FranthropyFeed>
-    <RestoreAdditionalProjectSources>$(RestoreAdditionalProjectSources);$(FranthropyFeed)</RestoreAdditionalProjectSources>
+    <RestoreAdditionalProjectSources Condition="'$(FranthropySource)' == 'Package'">$(RestoreAdditionalProjectSources);$(FranthropyFeed)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 </Project>
