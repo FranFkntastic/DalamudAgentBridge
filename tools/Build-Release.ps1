@@ -3,7 +3,7 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version,
 
-    [string]$FranthropyDalamudProject
+    [string]$FranthropyRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,8 +42,8 @@ New-Item -ItemType Directory -Force -Path $utilityStaging, $mcpStaging | Out-Nul
 $pluginBuildArguments = @{
     Configuration = 'Release'
 }
-if ($FranthropyDalamudProject) {
-    $pluginBuildArguments.FranthropyDalamudProject = $FranthropyDalamudProject
+if ($FranthropyRoot) {
+    $pluginBuildArguments.FranthropyRoot = $FranthropyRoot
 }
 & (Join-Path $repositoryRoot 'Build-PluginRepository.ps1') @pluginBuildArguments
 if ($LASTEXITCODE -ne 0) { throw 'Plugin package build failed.' }
