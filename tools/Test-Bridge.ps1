@@ -10,24 +10,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$developmentRoot = Split-Path -Parent $repoRoot
-$franthropyRoot = Join-Path $developmentRoot 'Franthropy\src\Franthropy.Dalamud'
 $testProject = Join-Path $repoRoot 'tests\DalamudAgentBridge.Tests\DalamudAgentBridge.Tests.csproj'
 $artifacts = Join-Path $repoRoot 'artifacts'
 $cachePath = Join-Path $artifacts "bridge-verification-$Configuration.json"
 $logPath = Join-Path $artifacts "bridge-verification-$Configuration.log"
 
 function Get-SourceSignature {
-    $files = foreach ($root in @((Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'tests'), $franthropyRoot)) {
+    # Paired development (FranthropySource=Local) builds against external source, so that
+    # selection and those sources must invalidate the cached verification too.
+    $sourceRoots = @((Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'tests'), (Join-Path $repoRoot 'eng'))
+    $dependencyMode = "franthropySource=$env:FranthropySource;franthropyRoot=$env:FranthropyRoot"
+    if ($env:FranthropySource -eq 'Local' -and $env:FranthropyRoot) {
+        $sourceRoots += Join-Path $env:FranthropyRoot 'src'
+    }
+    $files = @(Get-Item (Join-Path $repoRoot 'Directory.Build.props'), (Join-Path $repoRoot 'Directory.Build.targets')) + @(foreach ($root in $sourceRoots) {
         Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {
             $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and
             ($_.Extension -in @('.cs', '.csproj', '.props', '.targets', '.json'))
         }
     }
+    )
     $hash = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
     try {
         $version = (& dotnet --version).Trim()
-        $hash.AppendData([Text.Encoding]::UTF8.GetBytes("dotnet=$version;sharedCompilation=$(-not $DisableSharedCompilation)`n"))
+        $hash.AppendData([Text.Encoding]::UTF8.GetBytes("dotnet=$version;sharedCompilation=$(-not $DisableSharedCompilation);$dependencyMode`n"))
         foreach ($file in @($files | Sort-Object FullName -Unique)) {
             $hash.AppendData([Text.Encoding]::UTF8.GetBytes("$($file.FullName.ToLowerInvariant())`n$($file.Length)`n"))
             $stream = [IO.File]::OpenRead($file.FullName)
@@ -63,7 +69,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $summary = Get-Content -LiteralPath $logPath | Where-Object { $_ -match 'Passed!|Failed!|Build succeeded' } | Select-Object -Last 2
 $summary | Write-Host
-$assembly = Get-ChildItem -LiteralPath (Join-Path $repoRoot "tests\DalamudAgentBridge.Tests\bin\x64\$Configuration") `
+$assembly = Get-ChildItem -LiteralPath (Join-Path $repoRoot "tests\DalamudAgentBridge.Tests\bin") `
     -Recurse -Filter 'DalamudAgentBridge.Tests.dll' -File | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 if ($null -eq $assembly) { throw 'The verified bridge test assembly was not found.' }
 [ordered]@{

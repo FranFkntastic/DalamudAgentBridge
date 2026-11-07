@@ -2,7 +2,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
 
-    [string]$FranthropyDalamudProject
+    [string]$FranthropyRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,8 +15,8 @@ $repoPath = Join-Path $repositoryRoot 'repo.json'
 
 Remove-Item -LiteralPath $pluginOutput -Recurse -Force -ErrorAction SilentlyContinue
 $buildArguments = @('build', $pluginProject, '-c', $Configuration)
-if ($FranthropyDalamudProject) {
-    $buildArguments += "-p:FranthropyDalamudProject=$FranthropyDalamudProject"
+if ($FranthropyRoot) {
+    $buildArguments += @('-p:FranthropySource=Local', "-p:FranthropyRoot=$FranthropyRoot")
 }
 dotnet @buildArguments
 if ($LASTEXITCODE -ne 0) { throw 'Plugin build failed.' }

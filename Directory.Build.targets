@@ -1,0 +1,7 @@
+<Project>
+  <Target Name="ValidateFranthropySource" BeforeTargets="CollectPackageReferences;PrepareForBuild">
+    <Error Condition="'$(FranthropySource)' != 'Package' and '$(FranthropySource)' != 'Local'" Text="FranthropySource must be Package or Local." />
+    <Error Condition="'$(FranthropySource)' == 'Local' and ('$(FranthropyRoot)' == '' or !Exists('$(FranthropyRoot)/src'))" Text="Local Franthropy requires an explicit FranthropyRoot containing src." />
+    <Error Condition="'$(FranthropySource)' == 'Package' and '$(FranthropyRoot)' != ''" Text="FranthropyRoot requires explicit FranthropySource=Local." />
+  </Target>
+</Project>

@@ -16,17 +16,10 @@
     <RepoUrl>https://github.com/FranFkntastic/DalamudAgentBridge</RepoUrl>
   </PropertyGroup>
   <PropertyGroup>
-    <FranthropyDalamudProject Condition="'$(FranthropyDalamudProject)' == ''">..\..\..\Franthropy\src\Franthropy.Dalamud\Franthropy.Dalamud.csproj</FranthropyDalamudProject>
   </PropertyGroup>
-  <Target Name="RequireFranthropyDalamud" BeforeTargets="ResolveReferences">
-    <Error Condition="!Exists('$(FranthropyDalamudProject)')"
-      Text="Franthropy.Dalamud project was not found at '$(FranthropyDalamudProject)'. Clone Franthropy beside DalamudAgentBridge or set -p:FranthropyDalamudProject=&quot;path\to\Franthropy.Dalamud.csproj&quot;." />
-  </Target>
-  <Target Name="VerifyFranthropyRevision" BeforeTargets="BeforeBuild">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\tools\Test-FranthropyDependency.ps1&quot; -FranthropyDalamudProject &quot;$(FranthropyDalamudProject)&quot;" />
-  </Target>
   <ItemGroup>
-    <ProjectReference Include="$(FranthropyDalamudProject)" />
+    <PackageReference Include="Franthropy.Dalamud" Version="[$(FranthropyPackageVersion)]" Condition="'$(FranthropySource)' == 'Package'" />
+    <ProjectReference Include="$(FranthropyRoot)/src/Franthropy.Dalamud/Franthropy.Dalamud.csproj" Condition="'$(FranthropySource)' == 'Local'" />
     <Content Include="DalamudAgentBridge.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
