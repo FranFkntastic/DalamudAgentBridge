@@ -11,10 +11,26 @@ permissions:
 jobs:
   draft:
     runs-on: windows-latest
+    env:
+      FranthropySource: Local
+      FranthropyRoot: ${{ github.workspace }}/Franthropy
     steps:
       - uses: actions/checkout@v6
         with:
           path: DalamudAgentBridge
+      - name: Read pinned Franthropy revision
+        id: franthropy
+        shell: pwsh
+        run: |
+          [xml]$pin = Get-Content DalamudAgentBridge/eng/Franthropy.Version.props
+          $revision = ([string]$pin.Project.PropertyGroup.FranthropyPackageVersion).Replace('0.1.0-commit.', '')
+          if ($revision -notmatch '^[0-9a-f]{40}$') { throw 'Invalid Franthropy package pin.' }
+          "revision=$revision" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v6
+        with:
+          repository: FranFkntastic/Franthropy
+          ref: ${{ steps.franthropy.outputs.revision }}
+          path: Franthropy
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
