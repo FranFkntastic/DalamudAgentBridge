@@ -16,7 +16,14 @@ $cachePath = Join-Path $artifacts "bridge-verification-$Configuration.json"
 $logPath = Join-Path $artifacts "bridge-verification-$Configuration.log"
 
 function Get-SourceSignature {
-    $files = @(Get-Item (Join-Path $repoRoot 'Directory.Build.props'), (Join-Path $repoRoot 'Directory.Build.targets')) + @(foreach ($root in @((Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'tests'), (Join-Path $repoRoot 'eng'))) {
+    # Paired development (FranthropySource=Local) builds against external source, so that
+    # selection and those sources must invalidate the cached verification too.
+    $sourceRoots = @((Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'tests'), (Join-Path $repoRoot 'eng'))
+    $dependencyMode = "franthropySource=$env:FranthropySource;franthropyRoot=$env:FranthropyRoot"
+    if ($env:FranthropySource -eq 'Local' -and $env:FranthropyRoot) {
+        $sourceRoots += Join-Path $env:FranthropyRoot 'src'
+    }
+    $files = @(Get-Item (Join-Path $repoRoot 'Directory.Build.props'), (Join-Path $repoRoot 'Directory.Build.targets')) + @(foreach ($root in $sourceRoots) {
         Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {
             $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and
             ($_.Extension -in @('.cs', '.csproj', '.props', '.targets', '.json'))
@@ -26,7 +33,7 @@ function Get-SourceSignature {
     $hash = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
     try {
         $version = (& dotnet --version).Trim()
-        $hash.AppendData([Text.Encoding]::UTF8.GetBytes("dotnet=$version;sharedCompilation=$(-not $DisableSharedCompilation)`n"))
+        $hash.AppendData([Text.Encoding]::UTF8.GetBytes("dotnet=$version;sharedCompilation=$(-not $DisableSharedCompilation);$dependencyMode`n"))
         foreach ($file in @($files | Sort-Object FullName -Unique)) {
             $hash.AppendData([Text.Encoding]::UTF8.GetBytes("$($file.FullName.ToLowerInvariant())`n$($file.Length)`n"))
             $stream = [IO.File]::OpenRead($file.FullName)

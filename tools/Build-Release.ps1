@@ -48,6 +48,12 @@ if ($FranthropyRoot) {
 & (Join-Path $repositoryRoot 'Build-PluginRepository.ps1') @pluginBuildArguments
 if ($LASTEXITCODE -ne 0) { throw 'Plugin package build failed.' }
 
+# Every published component must resolve the same Franthropy source as the plugin.
+$dependencyArguments = @()
+if ($FranthropyRoot) {
+    $dependencyArguments = @('-p:FranthropySource=Local', "-p:FranthropyRoot=$FranthropyRoot")
+}
+
 $utilityPublishArguments = @(
     'publish',
     (Join-Path $repositoryRoot 'src\DalamudAgentBridge\DalamudAgentBridge.csproj'),
@@ -56,7 +62,7 @@ $utilityPublishArguments = @(
     '--self-contained', 'true',
     '-o', $utilityStaging,
     "-p:Version=$Version"
-)
+) + $dependencyArguments
 dotnet @utilityPublishArguments
 if ($LASTEXITCODE -ne 0) { throw 'Utility publish failed.' }
 
@@ -68,7 +74,7 @@ $mcpPublishArguments = @(
     '--self-contained', 'true',
     '-o', $mcpStaging,
     "-p:Version=$Version"
-)
+) + $dependencyArguments
 dotnet @mcpPublishArguments
 if ($LASTEXITCODE -ne 0) { throw 'MCP publish failed.' }
 
