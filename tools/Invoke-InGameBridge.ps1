@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet(
+        'get-plugin-surfaces', 'begin-plugin-surface-presentation', 'interact-plugin-surface', 'restore-plugin-surface-presentation',
+        'capture-screen', 'capture-plugin-surface',
         'hello', 'get-manifest', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'get-character-provisioning', 'begin-login',
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',
@@ -14,6 +16,7 @@ param(
     [string]$Target,
     [string]$ArgumentsJson,
     [string]$OperationId,
+    [string]$TransactionId,
     [long]$FrameId,
     [int]$ProcessId,
     [string]$PluginConfigName = 'DalamudAgentBridge',
@@ -57,6 +60,7 @@ try {
         $request.arguments = $arguments
     }
     if (-not [string]::IsNullOrWhiteSpace($OperationId)) { $request.operationId = $OperationId }
+    if (-not [string]::IsNullOrWhiteSpace($TransactionId)) { $request.transactionId = $TransactionId }
 
     $pipe = [IO.Pipes.NamedPipeClientStream]::new(
         '.',
@@ -69,7 +73,7 @@ try {
         $writer = [IO.StreamWriter]::new($pipe)
         $writer.AutoFlush = $true
         $reader = [IO.StreamReader]::new($pipe)
-        $writer.WriteLine(($request | ConvertTo-Json -Compress))
+        $writer.WriteLine(($request | ConvertTo-Json -Depth 12 -Compress))
         $reader.ReadLine()
     }
     finally { $pipe.Dispose() }

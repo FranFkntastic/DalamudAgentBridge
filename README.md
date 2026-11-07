@@ -228,6 +228,23 @@ capture, deployment, and reviewed-action tools over MCP stdio. Follow the
 
 ## Releases
 
+### Capture files and full-screen review
+
+`dab screen --profile <alias> --out capture.png` captures the full viewport through
+the standalone DAB connector, including ImGui popups, without requiring a bridge
+in the photographed plugin. It does not open a plugin window.
+
+`capture`, `surface-capture`, and `surface-interact-capture` also accept `--out`.
+The exported PNG is decrypted and SHA-256 verified; an existing destination is
+never overwritten. Unlike the encrypted review vault, exported files have no
+automatic expiry: callers must protect and delete them when no longer needed.
+Reflected-window captures contain only that window's draw list, not its popups;
+use `screen` while the desired state is visible to include popups.
+
+For shells that strip native-argument quotes, use `--sequence-file input.json`
+instead of `--sequence` and `--arguments-file arguments.json` instead of inline
+action arguments. Each pair is mutually exclusive.
+
 Tagged releases provide Windows x64 utility and MCP bundles. Building the
 in-game connector still requires a local Dalamud development installation;
 maintainers can produce the complete release with

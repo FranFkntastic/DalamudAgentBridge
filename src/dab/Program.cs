@@ -13,6 +13,8 @@ Console.CancelKeyPress += (_, eventArgs) =>
 try
 {
     var commandLine = DabCommandLine.Parse(args);
+    if (commandLine.Value("out") is not null && commandLine.Command is not ("capture" or "screen" or "surface-capture" or "surface-interact-capture"))
+        throw new ArgumentException("--out requires a capture-producing command.");
     var configuration = new ConfigurationBuilder()
         .AddEnvironmentVariables("DAB_")
         .Build();
@@ -96,8 +98,23 @@ try
                 FullViewport = commandLine.Flag("full-viewport"),
             },
             cancellation.Token),
+        "screen" => await capture.CaptureAsync(
+            commandLine.ConnectorTarget(),
+            new BridgeCommandRequest { FullViewport = true },
+            cancellation.Token),
         _ => throw new ArgumentException($"Unknown dab command '{commandLine.Command}'."),
     };
+    if (commandLine.Value("out") is { } output)
+    {
+        var captured = result switch
+        {
+            PluginCaptureReviewReceipt direct => direct,
+            PluginSurfaceCaptureReviewReceipt surface => surface.Capture,
+            PluginSurfaceInteractionCaptureReviewReceipt interaction => interaction.Capture,
+            _ => throw new ArgumentException("--out requires a capture-producing command."),
+        };
+        reviewVault.Export(captured.Review, output);
+    }
     Console.WriteLine(JsonSerializer.Serialize(result, json));
     return 0;
 }
@@ -130,7 +147,7 @@ internal sealed class DabCommandLine
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             throw new ArgumentException(
-                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|surface-input|surface-interact-capture|health|manifest|snapshot|specialists|specialist-start|specialist-cancel|logs|chat|wait|act|deploy|install|capture> [plugin-or-capability] [--profile primary] [options]");
+                "Usage: dab <list|plugins|surfaces|surface-present|surface-restore|surface-capture|surface-input|surface-interact-capture|health|manifest|snapshot|specialists|specialist-start|specialist-cancel|logs|chat|wait|act|deploy|install|capture|screen> [plugin-or-capability] [--profile primary] [--out file.png] [--sequence JSON | --sequence-file file.json] [options]");
         var options = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var positionals = new List<string>();
         for (var index = 1; index < args.Length; index++)
@@ -198,7 +215,10 @@ internal sealed class DabCommandLine
 
     public JsonElement? Json(string name)
     {
-        if (Value(name) is not { } value)
+        if (Value(name) is not null && Value(name + "-file") is not null)
+            throw new ArgumentException($"Use either --{name} or --{name}-file, not both.");
+        var value = Value(name + "-file") is { } path ? File.ReadAllText(path) : Value(name);
+        if (value is null)
             return null;
         using var document = JsonDocument.Parse(value);
         return document.RootElement.Clone();
@@ -206,7 +226,9 @@ internal sealed class DabCommandLine
 
     public PluginSurfaceInputSequenceRequest InputSequence()
     {
-        var value = Required("sequence");
+        if (Value("sequence") is not null && Value("sequence-file") is not null)
+            throw new ArgumentException("Use either --sequence or --sequence-file, not both.");
+        var value = Value("sequence-file") is { } path ? File.ReadAllText(path) : Required("sequence");
         return JsonSerializer.Deserialize<PluginSurfaceInputSequenceRequest>(value, new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             PropertyNameCaseInsensitive = true,
