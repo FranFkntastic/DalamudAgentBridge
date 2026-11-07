@@ -333,6 +333,12 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "dab": {
+        "type": "Project",
+        "dependencies": {
+          "DalamudAgentBridge": "[1.0.0, )"
+        }
+      },
       "dab-mcp": {
         "type": "Project",
         "dependencies": {

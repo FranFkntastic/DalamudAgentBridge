@@ -26,6 +26,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DalamudAgentBridge\DalamudAgentBridge.csproj" />
+    <ProjectReference Include="..\..\src\dab\dab.csproj" />
     <ProjectReference Include="..\..\src\dab-mcp\dab-mcp.csproj" />
     <Compile Include="..\..\src\DalamudAgentBridge.Plugin\NativeSlashCommandPolicy.cs"
               Link="NativeSlashCommandPolicy.cs" />

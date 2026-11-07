@@ -122,6 +122,22 @@ public sealed class ReviewVault
         }
     }
 
+    /// <summary>Explicitly exports a decrypted, hash-verified PNG. The caller owns its retention.</summary>
+    public void Export(ReviewCapture review, string destination)
+    {
+        if (!TryRead(review.Id, out var bytes))
+            throw new InvalidDataException("Review capture is unavailable or expired.");
+        try
+        {
+            if (!string.Equals(Convert.ToHexString(SHA256.HashData(bytes)), review.Receipt.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Review capture hash verification failed.");
+            var path = Path.GetFullPath(destination);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            WriteAtomically(path, bytes);
+        }
+        finally { CryptographicOperations.ZeroMemory(bytes); }
+    }
+
     private void PurgeExpiredCore()
     {
         if (!Directory.Exists(rootDirectory))
