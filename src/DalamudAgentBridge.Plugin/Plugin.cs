@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginSurfaceDiscoveryService pluginSurfaceDiscovery;
     private readonly DalamudPluginSurfacePresentationService pluginSurfacePresentation;
     private readonly ReflectedPluginWindowInputController pluginSurfaceInput;
+    private readonly PluginSurfaceWindowMeasurementService surfaceMeasurement;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
     private readonly DalamudRenderedUiTextActionDispatcher renderedTextActions;
@@ -137,6 +138,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginSurfaceDiscovery = new DalamudPluginSurfaceDiscoveryService(pluginInterface);
         pluginSurfacePresentation = new DalamudPluginSurfacePresentationService(pluginSurfaceDiscovery, framework, TimeSpan.FromSeconds(30));
         pluginSurfaceInput = new ReflectedPluginWindowInputController(pluginSurfacePresentation.GetActiveTarget);
+        surfaceMeasurement = new PluginSurfaceWindowMeasurementService(pluginSurfacePresentation.GetActiveTarget);
         bridgeHost = new AgentBridgeHost(
             configuration,
             pluginInterface.Manifest.InternalName,
@@ -164,6 +166,7 @@ public sealed class Plugin : IDalamudPlugin
                 () => pluginSurfacePresentation.GetCaptureWindowName(transactionId),
                 "PluginSurface",
                 cancellationToken),
+            surfaceMeasurement.MeasureAsync,
             () => pluginLifecycle.Snapshot(),
             (internalName, isDev) => pluginLifecycle.GetRuntimeIdentity(internalName, isDev),
             target => pluginSurfaceDiscovery.Snapshot(target),
@@ -228,6 +231,7 @@ public sealed class Plugin : IDalamudPlugin
         chatGui.ChatMessage -= OnChatMessage;
         viewportCapture.Dispose();
         pluginSurfaceInput.Dispose();
+        surfaceMeasurement.Dispose();
         pluginSurfacePresentation.Dispose();
         sharedObservationHost?.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
@@ -378,6 +382,7 @@ public sealed class Plugin : IDalamudPlugin
             frame = reviewRegistry.EndFrame();
             pluginSurfaceInput.RenderFrame();
             viewportCapture.RenderPendingWindowCapture();
+            surfaceMeasurement.RenderFrame();
         }
         if (captureRegion != null && frame != null && captureTransactions.ShouldPresentInMainViewport("bridge.main-window"))
             captureTransactions.MarkRendered("bridge.main-window", frame.FrameId);

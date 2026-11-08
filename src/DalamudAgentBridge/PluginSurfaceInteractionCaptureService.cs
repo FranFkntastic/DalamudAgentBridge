@@ -73,7 +73,10 @@ public sealed class PluginSurfaceInteractionCaptureService
         if (captured is null)
             throw new InvalidOperationException("Plugin surface interaction did not return a review capture.");
         if (restoration is not { Success: true })
+        {
+            capture.DeleteReview(captured);
             throw new InvalidOperationException(restoration?.Message ?? "Plugin surface restoration did not return a result.");
+        }
         return new(presentation, interaction, captured, restoration);
     }
 }

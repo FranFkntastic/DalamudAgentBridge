@@ -18,6 +18,7 @@
   <PropertyGroup>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/PluginSurfaceWindowMeasurement.cs" Link="PluginSurfaceWindowMeasurement.cs" />
     <PackageReference Include="Franthropy.Dalamud" Version="[$(FranthropyPackageVersion)]" Condition="'$(FranthropySource)' == 'Package'" />
     <ProjectReference Include="$(FranthropyRoot)/src/Franthropy.Dalamud/Franthropy.Dalamud.csproj" Condition="'$(FranthropySource)' == 'Local'" />
     <Content Include="DalamudAgentBridge.json">

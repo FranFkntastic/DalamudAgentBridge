@@ -39,6 +39,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation;
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface;
+    private readonly Func<string, CancellationToken, Task<PluginSurfaceWindowMeasurement>> measurePluginSurface;
     private readonly Func<object> createPluginSnapshot;
     private readonly Func<string, bool?, object> getPluginRuntimeIdentity;
     private readonly Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog;
@@ -86,6 +87,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation,
         Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport,
         Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface,
+        Func<string, CancellationToken, Task<PluginSurfaceWindowMeasurement>> measurePluginSurface,
         Func<object> createPluginSnapshot,
         Func<string, bool?, object> getPluginRuntimeIdentity,
         Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog,
@@ -124,6 +126,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.cancelCapturePresentation = cancelCapturePresentation;
         this.captureViewport = captureViewport;
         this.capturePluginSurface = capturePluginSurface;
+        this.measurePluginSurface = measurePluginSurface;
         this.createPluginSnapshot = createPluginSnapshot;
         this.getPluginRuntimeIdentity = getPluginRuntimeIdentity;
         this.createPluginSurfaceCatalog = createPluginSurfaceCatalog;
@@ -194,7 +197,7 @@ public sealed class AgentBridgeHost : IDisposable
             "begin-plugin-surface-presentation", "restore-plugin-surface-presentation", "interact-plugin-surface",
             "enable-plugin", "disable-plugin", "install-plugin", "install-dev-plugin", "begin-capture-presentation", "complete-capture-presentation",
             "cancel-capture-presentation", "capture-screen",
-            "capture-plugin-surface",
+            "capture-plugin-surface", "measure-plugin-surface-window",
             "get-situation", "get-navigation", "navigate-to", "cancel-navigation",
             "get-specialists", "start-specialist", "cancel-specialist",
             "send-chat", "get-chat-log",
@@ -430,6 +433,11 @@ public sealed class AgentBridgeHost : IDisposable
                 }
                 catch (OperationCanceledException) { return AgentBridgeResponse.Fail("Presented plugin surface capture timed out."); }
                 catch (Exception exception) { return AgentBridgeResponse.Fail($"Presented plugin surface capture failed: {exception.Message}"); }
+            case "measure-plugin-surface-window":
+                if (!configuration.EnableScreenshots) return AgentBridgeResponse.Fail("Agent Bridge screenshots are disabled.");
+                if (string.IsNullOrWhiteSpace(request.TransactionId)) return AgentBridgeResponse.Fail("An active plugin presentation lease is required.");
+                try { return AgentBridgeResponse.Ok("Presented plugin window measured.", await measurePluginSurface(request.TransactionId, cancellationToken).ConfigureAwait(false)); }
+                catch (Exception exception) { return AgentBridgeResponse.Fail($"Plugin window measurement failed: {exception.Message}"); }
             case "send-chat":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A chat line is required.");
                 var chatLine = request.Target.Trim();

@@ -1,5 +1,7 @@
 using Microsoft.Graphics.Canvas;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Windows.Graphics.Capture;
@@ -13,6 +15,99 @@ public sealed class WindowsGraphicsCaptureService
 {
     private const int MaximumDimension = 16384;
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(8);
+    private readonly SemaphoreSlim windowCaptureLock = new(1, 1);
+
+    /// <summary>Reads only the connector-measured window. Never captures the desktop or activates a window.</summary>
+    public async Task<WindowsGraphicsCapture> CaptureWindowAsync(int processId, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
+    {
+        ValidateWindowOwnership(processId, (nint)region.WindowHandle);
+        if (!await windowCaptureLock.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("A platform-window capture is still completing.");
+        // PrintWindow is synchronous native work. Bound the caller, but retain the slot until
+        // native completion so repeated timeouts cannot accumulate blocked capture workers.
+        var task = Task.Run(() =>
+        {
+            try { return CaptureRenderedWindow(processId, region, cancellationToken); }
+            finally { windowCaptureLock.Release(); }
+        });
+        try { return await task.WaitAsync(DefaultTimeout, cancellationToken).ConfigureAwait(false); }
+        catch
+        {
+            _ = task.ContinueWith(completed =>
+            {
+                if (completed.Status == TaskStatus.RanToCompletion) CryptographicOperations.ZeroMemory(completed.Result.PngBytes);
+                else _ = completed.Exception;
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw;
+        }
+    }
+
+    private static WindowsGraphicsCapture CaptureRenderedWindow(int processId, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
+    {
+        // ImGui reports physical client coordinates. Avoid DPI virtualization on mixed-DPI monitors.
+        var previous = SetThreadDpiAwarenessContext((nint)(-4)); // PER_MONITOR_AWARE_V2
+        if (previous == nint.Zero)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.TargetUnsupported, "Physical-pixel window capture is unavailable.");
+        try { return CaptureRenderedWindowCore(processId, region, cancellationToken); }
+        finally { SetThreadDpiAwarenessContext(previous); }
+    }
+
+    private static WindowsGraphicsCapture CaptureRenderedWindowCore(int processId, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var handle = (nint)region.WindowHandle;
+        ValidateWindowOwnership(processId, handle);
+        if (!IsWindowVisible(handle) || IsIconic(handle) || !TryGetClientBounds(handle, out var bounds))
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.TargetUnsupported, "The leased plugin window is not visibly rendered.");
+        ValidateRegion(region.X, region.Y, region.Width, region.Height, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
+        if (bounds.Left != region.ScreenX || bounds.Top != region.ScreenY)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin platform window moved before capture.");
+        using var bitmap = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            var dc = graphics.GetHdc();
+            try
+            {
+                if (!PrintWindow(handle, dc, 3)) // PW_CLIENTONLY | PW_RENDERFULLCONTENT
+                    throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.CaptureFailed, "The leased platform window did not render into the capture surface.");
+            }
+            finally { graphics.ReleaseHdc(dc); }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateWindowOwnership(processId, handle);
+        if (!TryGetClientBounds(handle, out var after) || !bounds.Equals(after))
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin platform window moved during capture.");
+        using var cropped = bitmap.Clone(new Rectangle(region.X, region.Y, region.Width, region.Height), PixelFormat.Format32bppArgb);
+        using var output = new MemoryStream();
+        try
+        {
+            cropped.Save(output, ImageFormat.Png);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(output.ToArray(), region.Width, region.Height);
+        }
+        finally
+        {
+            if (output.TryGetBuffer(out var buffer)) CryptographicOperations.ZeroMemory(buffer.AsSpan());
+        }
+    }
+
+    internal static void ValidateRegion(int x, int y, int width, int height, int platformWidth, int platformHeight)
+    {
+        ValidateDimensions(width, height, "plugin region");
+        ValidateDimensions(platformWidth, platformHeight, "platform window");
+        if (x < 0 || y < 0 || (long)x + width > platformWidth || (long)y + height > platformHeight)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin region lies outside its platform window.");
+    }
+
+    internal static void ValidateWindowOwnership(int processId, nint handle)
+    {
+        if (processId <= 0)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidProcess, "The target process ID is invalid.");
+        if (handle == nint.Zero)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.MainWindowUnavailable, "The target platform window is unavailable.");
+        if (GetWindowThreadProcessId(handle, out var owner) == 0 || owner != processId)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.WindowOwnershipMismatch, "The platform window is not owned by the selected process.");
+    }
 
     public async Task<WindowsGraphicsCapture> CaptureAsync(
         int processId,
@@ -132,6 +227,30 @@ public sealed class WindowsGraphicsCaptureService
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint windowHandle, out int processId);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetClientRect(nint windowHandle, out WindowRect bounds);
+    [DllImport("user32.dll")]
+    private static extern bool ClientToScreen(nint windowHandle, ref Point point);
+    [DllImport("user32.dll")]
+    private static extern nint SetThreadDpiAwarenessContext(nint context);
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(nint windowHandle, nint deviceContext, uint flags);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(nint windowHandle);
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(nint windowHandle);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRect { public int Left, Top, Right, Bottom; }
+
+    private static bool TryGetClientBounds(nint handle, out WindowRect bounds)
+    {
+        var origin = new Point();
+        if (!GetClientRect(handle, out bounds) || !ClientToScreen(handle, ref origin)) return false;
+        bounds.Left += origin.X; bounds.Right += origin.X;
+        bounds.Top += origin.Y; bounds.Bottom += origin.Y;
+        return true;
+    }
 
     private static class CaptureItemFactory
     {
