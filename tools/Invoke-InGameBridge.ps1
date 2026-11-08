@@ -2,7 +2,7 @@
 param(
     [ValidateSet(
         'get-plugin-surfaces', 'begin-plugin-surface-presentation', 'interact-plugin-surface', 'restore-plugin-surface-presentation',
-        'capture-screen', 'capture-plugin-surface',
+        'capture-screen', 'capture-plugin-surface', 'measure-plugin-surface-window',
         'hello', 'get-manifest', 'get-snapshot', 'get-client-snapshot', 'get-login-ui', 'get-character-provisioning', 'begin-login',
         'get-review-surfaces', 'get-capture-surfaces', 'get-control-surface',
         'get-control', 'review-control', 'invoke-control',

@@ -113,7 +113,7 @@ public sealed class PluginSurfaceCaptureService
         var response = await pipe.SendAsync(instance, "measure-plugin-surface-window",
             new BridgeCommandRequest { TransactionId = transactionId }, cancellationToken).ConfigureAwait(false);
         if (!response.Success || response.Receipt is not { } receipt)
-            throw new InvalidOperationException($"An updated connector with leased-window measurement is required. {response.Message}");
+            throw new InvalidOperationException($"Cannot measure the leased plugin window. {response.Message}");
         var measured = receipt.Deserialize<PluginSurfaceWindowMeasurement>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidDataException("Plugin window measurement was empty.");
         if (measured.TransactionId != transactionId || string.IsNullOrWhiteSpace(measured.RuntimeInstanceId) ||
