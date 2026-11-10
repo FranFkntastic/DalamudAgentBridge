@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginSurfaceDiscoveryService pluginSurfaceDiscovery;
     private readonly DalamudPluginSurfacePresentationService pluginSurfacePresentation;
     private readonly ReflectedPluginWindowInputController pluginSurfaceInput;
+    private readonly ReflectedPluginWindowInputFramePump pluginSurfaceInputPump;
     private readonly PluginSurfaceWindowMeasurementService surfaceMeasurement;
     private readonly AgentBridgeUiReviewRegistry reviewRegistry = new();
     private readonly AgentBridgeUiCaptureTransactionManager captureTransactions;
@@ -138,6 +139,8 @@ public sealed class Plugin : IDalamudPlugin
         pluginSurfaceDiscovery = new DalamudPluginSurfaceDiscoveryService(pluginInterface);
         pluginSurfacePresentation = new DalamudPluginSurfacePresentationService(pluginSurfaceDiscovery, framework, TimeSpan.FromSeconds(30));
         pluginSurfaceInput = new ReflectedPluginWindowInputController(pluginSurfacePresentation.GetActiveTarget);
+        pluginSurfaceInputPump = new ReflectedPluginWindowInputFramePump(
+            pluginSurfaceInput, exception => pluginLog.Error(exception, "Reflected input frame hook failed."));
         surfaceMeasurement = new PluginSurfaceWindowMeasurementService(pluginSurfacePresentation.GetActiveTarget);
         bridgeHost = new AgentBridgeHost(
             configuration,
@@ -230,7 +233,7 @@ public sealed class Plugin : IDalamudPlugin
         navigation.Dispose();
         chatGui.ChatMessage -= OnChatMessage;
         viewportCapture.Dispose();
-        pluginSurfaceInput.Dispose();
+        pluginSurfaceInputPump.Dispose();
         surfaceMeasurement.Dispose();
         pluginSurfacePresentation.Dispose();
         sharedObservationHost?.Dispose();
@@ -380,7 +383,7 @@ public sealed class Plugin : IDalamudPlugin
         finally
         {
             frame = reviewRegistry.EndFrame();
-            pluginSurfaceInput.RenderFrame();
+            pluginSurfaceInputPump.EnsureRegistered();
             viewportCapture.RenderPendingWindowCapture();
             surfaceMeasurement.RenderFrame();
         }
