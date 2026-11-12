@@ -39,7 +39,7 @@ jobs:
             8.0.x
             10.0.x
 
-      - name: Build MCP integration target
+      - name: Build MCP server
         working-directory: DalamudAgentBridge
         run: dotnet build src/dab-mcp/dab-mcp.csproj -c Debug -p:Platform=x64
 
