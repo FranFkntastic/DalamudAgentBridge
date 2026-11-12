@@ -24,7 +24,6 @@
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="DalamudAgentBridge.Tests" />
     <Compile Include="../Shared/PluginSurfaceWindowMeasurement.cs" Link="PluginSurfaceWindowMeasurement.cs" />
   </ItemGroup>
 </Project>
