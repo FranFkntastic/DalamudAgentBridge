@@ -1,15 +1,15 @@
 # Contributing to Dalamud Agent Bridge
 
 Thanks for helping make agent-assisted Dalamud development safer and more
-useful. Bug reports, documentation improvements, protocol proposals, focused
-tests, and implementation pull requests are welcome.
+useful. Bug reports, documentation improvements, protocol proposals, and
+implementation pull requests are welcome.
 
 ## Before You Start
 
 Open an issue before making a large protocol, security-boundary, or architecture
 change. Small fixes can go directly to a pull request.
 
-The utility, CLI, MCP server, and protocol tests build from this repository
+The utility, CLI, and MCP server build from this repository
 alone using the published `Franthropy.AgentBridge` package. Clone
 [Franthropy](https://github.com/FranFkntastic/Franthropy) beside this repository
 only when changing the in-game connector, which consumes the patch-sensitive
@@ -41,8 +41,20 @@ content and history before pushing.
 
 ## Verification
 
-Use the smallest source-only check that proves the change. Relevant focused
-tests live in `tests/DalamudAgentBridge.Tests`. Live client actions, slash
+Use the smallest source-only check that proves the change; do not run broad
+suites by default. CI builds the CLI and MCP server and publishes the utility
+and MCP server. There is currently no retained automated test suite.
+
+Write or expand a test only when its actual assertions signal a specific problem
+that would be too difficult for the agent to diagnose or repair on its own AND
+would seriously frustrate the user. Explain both conditions before authoring,
+including the plausible unadvised edit to maintained code, the assertion that
+would fail, and the serious user harm it detects. Ordinary coverage, easy fixes,
+security or race labels, source-token checks, coverage targets, and workflow
+habit are not sufficient. This authorship rule does not independently authorize
+deleting existing tests or bypassing configured gates.
+
+Live client actions, slash
 commands, screenshots, plugin reloads, and game-state mutation are never implied
 by a test request; describe any live verification separately and obtain the
 client owner's permission first.

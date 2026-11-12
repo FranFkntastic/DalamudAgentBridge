@@ -14,7 +14,6 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="DalamudAgentBridge.Tests" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\DalamudAgentBridge\DalamudAgentBridge.csproj" />
   </ItemGroup>

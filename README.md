@@ -44,7 +44,7 @@ recorded in `Franthropy.commit`; this makes the bundled patch-sensitive adapter
 reproducible instead of silently consuming whichever sibling revision happens
 to be present. GitHub CI verifies the same receipt against a checkout of that
 commit.
-The utility, CLI, MCP server, and their tests consume the published
+The utility, CLI, and MCP server consume the published
 `Franthropy.AgentBridge` package and build from a standalone DAB checkout.
 
 ## Install
@@ -217,7 +217,14 @@ The local-build request accepts `sourceDirectory`, optional `expectedCurrentVers
 
 Dev-plugin bootstrap is a separate, narrower surface: `POST /api/bridges/{bridgeId}/plugins/{internalName}/install-dev` (or `install-dev-plugin` on the named pipe) registers a plugin that already exists on disk under the target profile's own `devPlugins` directory. The caller supplies an internal name only; the bridge resolves the assembly beneath that root, verifies the manifest matches the requested name, registers Dalamud's supported watched-location entry, scans, loads, and verifies the resulting state. Arbitrary paths and repository installs remain outside this surface.
 
-For repeated development, `tools\Test-Bridge.ps1` reuses a successful test result only while the source and test-assembly hashes remain unchanged. `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
+For repeated development, `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
+
+There is currently no retained automated test suite. Write or expand tests only
+when their actual assertions signal a specific problem too difficult for the
+agent to diagnose or repair alone AND seriously frustrating to the user; explain
+both conditions before authoring. Ordinary coverage, easy fixes, labels, and
+workflow habit are insufficient. See [Contributing](CONTRIBUTING.md#verification)
+for the full authorship rule and narrow source-only verification guidance.
 
 ## Connect an agent
 

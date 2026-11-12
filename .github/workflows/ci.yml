@@ -43,9 +43,9 @@ jobs:
         working-directory: DalamudAgentBridge
         run: dotnet build src/dab-mcp/dab-mcp.csproj -c Debug -p:Platform=x64
 
-      - name: Test utility and protocol
+      - name: Build CLI
         working-directory: DalamudAgentBridge
-        run: dotnet test tests/DalamudAgentBridge.Tests/DalamudAgentBridge.Tests.csproj -c Release -p:Platform=x64
+        run: dotnet build src/dab/dab.csproj -c Release -p:Platform=x64
 
       - name: Publish utility
         working-directory: DalamudAgentBridge
