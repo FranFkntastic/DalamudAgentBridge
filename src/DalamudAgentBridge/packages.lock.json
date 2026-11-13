@@ -4,9 +4,9 @@
     "net8.0-windows10.0.26100": {
       "Franthropy.AgentBridge": {
         "type": "Direct",
-        "requested": "[0.1.0-commit.af542e0feeab666444bb5b7677a13880730a4917, 0.1.0-commit.af542e0feeab666444bb5b7677a13880730a4917]",
-        "resolved": "0.1.0-commit.af542e0feeab666444bb5b7677a13880730a4917",
-        "contentHash": "Fg0fwH38FQxb0YEOFmqVuxiuUpVbEYrNt3XhsYVWccBtxiPsJJbGLv5H6oN/B8jcXWMtgwTvt1uOxYmpjza1PA==",
+        "requested": "[0.1.0-commit.c4a243e74441323ef90f2f817cc63d11a1092ca6, 0.1.0-commit.c4a243e74441323ef90f2f817cc63d11a1092ca6]",
+        "resolved": "0.1.0-commit.c4a243e74441323ef90f2f817cc63d11a1092ca6",
+        "contentHash": "yfsl6ofQg3yEUe95T/xzbOMKvjSzH6qJCM9NnCI6rTU+IlIkRM5YNCek+hK+k2AuzTAPDUmX1UjKviJd/tTVYA==",
         "dependencies": {
           "System.Security.Cryptography.ProtectedData": "9.0.0"
         }
