@@ -16,14 +16,14 @@
       },
       "Franthropy.Dalamud": {
         "type": "Direct",
-        "requested": "[0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2, 0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2]",
-        "resolved": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
-        "contentHash": "x1SdzzDKUfmSd33snoN8+ODHzL3vndeGwINAbLSUIUKAOKOHzi5agp9/ZPVUjcnyGepaNyqxdioZbCdtaG7DOQ==",
+        "requested": "[0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c, 0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c]",
+        "resolved": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
+        "contentHash": "wr9NLxREyAWuRB2mU+ZSrZNAjLoqIm/I5QDQVN/ENHYGScJOGfS1/+C7oKZT4gGuayyGn5OWhLJTKJDHRgyoPg==",
         "dependencies": {
           "ECommons": "3.2.1.15",
-          "Franthropy.AgentBridge": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
-          "Franthropy.Filtering": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
-          "Franthropy.Observations": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
+          "Franthropy.AgentBridge": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
+          "Franthropy.Filtering": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
+          "Franthropy.Observations": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
           "System.Security.Cryptography.ProtectedData": "9.0.0"
         }
       },
@@ -34,21 +34,21 @@
       },
       "Franthropy.AgentBridge": {
         "type": "Transitive",
-        "resolved": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
-        "contentHash": "ttSYHln4NC9dVkiWYMY6CsdLLNAPNrmPJNY9EUiYhLlZlk4XoSKWt9Jh7+FbWzkvVWcSR2iG35ANLhWO23Yheg==",
+        "resolved": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
+        "contentHash": "cjb0YOmyV+HXTl4oRHKHVWm7VepXwfgiEuzbKeHCsj+rW+IzZWl8LfTilwpuB4arj6taQUPBLxrp2+lwO61loQ==",
         "dependencies": {
           "System.Security.Cryptography.ProtectedData": "9.0.0"
         }
       },
       "Franthropy.Filtering": {
         "type": "Transitive",
-        "resolved": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
-        "contentHash": "jndvyKVbQRGGZs//vTSEgBWDnLO6+9NspzFm3ZDaNUQr8HWlF2Pmu7kZ834Lg6gXMSjhWX2qVoQN6CCiEhn44g=="
+        "resolved": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
+        "contentHash": "uFkJLBJjOidoHwb6MwCYypyDuDXqZ7tgrbmqu4mV5cFq2YxnnMSHreoTaNMHrri+/07TDoEeXvJL/qgfy+Z8iw=="
       },
       "Franthropy.Observations": {
         "type": "Transitive",
-        "resolved": "0.1.0-commit.e6b6afcf5e9bf96d0d1c8242284fa3fa16921cc2",
-        "contentHash": "g/qiFxaqmSctPVij8SszlcNafdeyNs2R4GZoSutJ+7isS8I8TIWzM3rqL4Y2fGIWr9AhDbqR+5+yRlfqqcbWLA==",
+        "resolved": "0.1.0-commit.09a87d72db36c22fe81f15a5a3ce349ffa7e617c",
+        "contentHash": "OGKUNQGj2cBYqusl42OQbglqCX2W5Cjb8L0E7jMHPS5DW5LDv/6z6nJcaiZlkdxSGACSln9u6/FJkMTiMLQVHA==",
         "dependencies": {
           "Microsoft.Data.Sqlite": "10.0.10",
           "SQLitePCLRaw.bundle_e_sqlite3": "3.0.5"
