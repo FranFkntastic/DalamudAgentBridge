@@ -15,8 +15,8 @@
       },
       "Franthropy.AgentBridge": {
         "type": "Transitive",
-        "resolved": "0.1.0-commit.c4810e86eff341043de229adfb634aab7e9142de",
-        "contentHash": "/HMXacsW9Qg8xcdMOdSKcPPLroAR7/xOjTbcLveArZpKMbyw9nKpZwYomvScQK9eQxCER7b6THt9G5oGVOeN8g==",
+        "resolved": "0.1.0-commit.f970d73d839239777d8f3538c3ca8f132a5d2b00",
+        "contentHash": "CvL+kcMaYkOxb7UogKmWhFCydKbX+Mo7wazTnOVPZHP/sExyEWrVX0zaZHwMUk7aX17P9vEMZ9ZfAFgSMaE5qw==",
         "dependencies": {
           "System.Security.Cryptography.ProtectedData": "9.0.0"
         }
@@ -229,7 +229,7 @@
       "dalamudagentbridge": {
         "type": "Project",
         "dependencies": {
-          "Franthropy.AgentBridge": "[0.1.0-commit.c4810e86eff341043de229adfb634aab7e9142de, 0.1.0-commit.c4810e86eff341043de229adfb634aab7e9142de]",
+          "Franthropy.AgentBridge": "[0.1.0-commit.f970d73d839239777d8f3538c3ca8f132a5d2b00, 0.1.0-commit.f970d73d839239777d8f3538c3ca8f132a5d2b00]",
           "Microsoft.Graphics.Win2D": "[1.4.0, )",
           "Microsoft.Windows.CsWinRT": "[2.2.0, )",
           "System.Drawing.Common": "[8.0.0, )",
