@@ -81,7 +81,9 @@ public sealed class Plugin : IDalamudPlugin
         IDataManager dataManager,
         IGameGui gameGui,
         ITextureProvider textureProvider,
-        ITextureReadbackProvider textureReadbackProvider)
+        ITextureReadbackProvider textureReadbackProvider,
+        IGameInteropProvider gameInterop,
+        ISigScanner sigScanner)
     {
         this.pluginInterface = pluginInterface;
         penumbraCrashReporter = new(() =>
@@ -208,6 +210,10 @@ public sealed class Plugin : IDalamudPlugin
                 GameInventory = gameInventory,
                 PlayerState = playerState,
                 AddonLifecycle = addonLifecycle,
+                Framework = framework,
+                InteropProvider = gameInterop,
+                SigScanner = sigScanner,
+                PluginLog = pluginLog,
                 Diagnostic = (message, exception) =>
                 {
                     if (exception is null) pluginLog.Warning(message);
