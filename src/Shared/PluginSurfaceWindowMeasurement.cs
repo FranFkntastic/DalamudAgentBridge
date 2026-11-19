@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+
 namespace DalamudAgentBridge;
 
 /// <summary>A measured region in the exact platform window owned by a live presentation lease.</summary>
@@ -15,11 +18,56 @@ public sealed record PluginSurfaceWindowMeasurement(
     int ScreenX,
     int ScreenY,
     int CompletedFrame,
-    CaptureFreshnessStamp? Stamp = null)
+    CaptureFreshnessStamp? Stamp = null,
+    PopupRegion[]? Attached = null)
 {
+    public const string PopupCapability = "plugin-surface-attached-popups";
+
     public bool HasSameTargetAndGeometry(PluginSurfaceWindowMeasurement other) =>
-        this with { CompletedFrame = 0, Stamp = null } == other with { CompletedFrame = 0, Stamp = null } &&
+        this with { CompletedFrame = 0, Stamp = null, Attached = null } == other with { CompletedFrame = 0, Stamp = null, Attached = null } &&
+        (Attached is null ? other.Attached is null : other.Attached != null && Attached.SequenceEqual(other.Attached)) &&
         Stamp?.X == other.Stamp?.X && Stamp?.Y == other.Stamp?.Y && Stamp?.CellsPerRow == other.Stamp?.CellsPerRow;
+}
+
+// Stamp coordinates here are relative to the viewport, including when multiple regions share one stamp.
+public sealed record PopupRegion(uint WindowId, string Name, long WindowHandle, uint ViewportId,
+    int X, int Y, int Width, int Height, int ScreenX, int ScreenY, CaptureFreshnessStamp ViewportStamp);
+
+public sealed record PixelRect(int X, int Y, int Width, int Height)
+{
+    public PixelRect Offset(int dx, int dy) => this with { X = checked(X + dx), Y = checked(Y + dy) };
+
+    public static PixelRect Union(PixelRect a, PixelRect b)
+    {
+        checked
+        {
+            var x = Math.Min(a.X, b.X);
+            var y = Math.Min(a.Y, b.Y);
+            return new(x, y, Math.Max(a.X + a.Width, b.X + b.Width) - x,
+                Math.Max(a.Y + a.Height, b.Y + b.Height) - y);
+        }
+    }
+}
+
+public sealed record CaptureRegionPlacement(uint WindowId, string Name, uint ViewportId, PixelRect Rect, PixelRect StampRect);
+
+public sealed record SurfaceCompositeLayout(PixelRect ScreenBounds, PixelRect MainRect, CaptureRegionPlacement[] Attached)
+{
+    public static SurfaceCompositeLayout From(PluginSurfaceWindowMeasurement main)
+    {
+        var mainScreen = new PixelRect(main.X, main.Y, main.Width, main.Height).Offset(main.ScreenX, main.ScreenY);
+        var bounds = mainScreen;
+        var placed = (main.Attached ?? []).Select(p =>
+        {
+            var screen = new PixelRect(p.X, p.Y, p.Width, p.Height).Offset(p.ScreenX, p.ScreenY);
+            bounds = PixelRect.Union(bounds, screen);
+            var s = p.ViewportStamp;
+            return new CaptureRegionPlacement(p.WindowId, p.Name, p.ViewportId, screen,
+                new PixelRect(s.X, s.Y, s.Width, s.Height).Offset(p.ScreenX, p.ScreenY));
+        }).ToArray();
+        PixelRect Place(PixelRect r) => r with { X = checked(r.X - bounds.X), Y = checked(r.Y - bounds.Y) };
+        return new(bounds, Place(mainScreen), placed.Select(p => p with { Rect = Place(p.Rect), StampRect = Place(p.StampRect) }).ToArray());
+    }
 }
 
 /// <summary>Physical pixels relative to the published crop; sync, 32 nonce bits (LSB first), guard.</summary>

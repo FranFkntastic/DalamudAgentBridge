@@ -102,6 +102,9 @@ public sealed record BridgeCaptureReceipt
     public long? FrameId { get; init; }
     public uint? ViewportId { get; init; }
     public CaptureFreshnessStamp? Stamp { get; init; }
+    public string? PopupCoverage { get; init; }
+    public PixelRect? MainRect { get; init; }
+    public CaptureRegionPlacement[]? AttachedRegions { get; init; }
 }
 
 public sealed record PluginCaptureReviewReceipt(

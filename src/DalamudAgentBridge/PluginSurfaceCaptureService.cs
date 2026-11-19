@@ -80,14 +80,20 @@ public sealed class PluginSurfaceCaptureService
         CancellationToken cancellationToken)
     {
         var instance = client.Resolve(connector);
+        var manifest = await client.GetManifestAsync(instance, cancellationToken).ConfigureAwait(false);
+        var popupCapable = manifest.Capabilities.Any(c => c.Id == PluginSurfaceWindowMeasurement.PopupCapability);
         var nonce = BitConverter.ToInt32(RandomNumberGenerator.GetBytes(sizeof(int)));
         var measurement = await MeasureAsync(instance, transactionId, nonce, cancellationToken).ConfigureAwait(false);
+        if (popupCapable != (measurement.Attached != null))
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "Popup measurement does not match connector capabilities.");
         var captured = await capture.CaptureWindowAsync(instance.ProcessId, measurement, cancellationToken).ConfigureAwait(false);
         try
         {
             var after = await MeasureAsync(instance, transactionId, nonce, cancellationToken).ConfigureAwait(false);
             if (!measurement.HasSameTargetAndGeometry(after))
-                throw new InvalidOperationException("The leased plugin window changed during capture; no review was published.");
+                throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame,
+                    "The leased plugin window or its attached popup tree changed during capture; no review was published.");
+            var layout = SurfaceCompositeLayout.From(measurement);
             var receipt = new BridgeCaptureReceipt
             {
                 SchemaVersion = 1,
@@ -100,7 +106,10 @@ public sealed class PluginSurfaceCaptureService
                 Scope = "PluginSurface", CaptureMethod = "PrintWindowRenderFullContent",
                 TargetPlugin = measurement.TargetPlugin, TransactionId = transactionId,
                 ViewportId = measurement.ViewportId, FrameId = measurement.CompletedFrame,
-                Stamp = measurement.Stamp,
+                Stamp = measurement.Stamp! with { X = layout.MainRect.X + measurement.Stamp.X, Y = layout.MainRect.Y + measurement.Stamp.Y },
+                MainRect = layout.MainRect,
+                AttachedRegions = layout.Attached,
+                PopupCoverage = measurement.Attached == null ? "main-window-only (legacy connector)" : "attached-popup-tree",
             };
             var review = reviewVault.Store(receipt, captured.PngBytes);
             return new(AgentBridgeClient.ToView(instance), receipt, review, $"/api/reviews/{review.Id}.png");
@@ -115,7 +124,8 @@ public sealed class PluginSurfaceCaptureService
         var response = await pipe.SendAsync(instance, "measure-plugin-surface-window",
             new BridgeCommandRequest { TransactionId = transactionId, Arguments = JsonSerializer.SerializeToElement(nonce) }, cancellationToken).ConfigureAwait(false);
         if (!response.Success || response.Receipt is not { } receipt)
-            throw new InvalidOperationException($"Cannot measure the leased plugin window. {response.Message}");
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.CaptureFailed,
+                $"Cannot measure the leased plugin window. {response.Message}");
         var measured = receipt.Deserialize<PluginSurfaceWindowMeasurement>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidDataException("Plugin window measurement was empty.");
         if (measured.Stamp is not { } stamp)
@@ -128,6 +138,11 @@ public sealed class PluginSurfaceCaptureService
             string.IsNullOrWhiteSpace(measured.TargetPlugin) || string.IsNullOrWhiteSpace(measured.SurfaceId) ||
             measured.ViewportId == 0 || measured.CompletedFrame < 0)
             throw new InvalidDataException("Plugin window measurement did not identify the active lease.");
+        if (measured.Attached is { } attached &&
+            (attached.Length > 8 || attached.Any(p => p == null || p.WindowId == 0 || p.ViewportId == 0 ||
+                string.IsNullOrEmpty(p.Name) || p.ViewportStamp is not { } s || s.Nonce != nonce ||
+                s.CellsPerRow is < 1 or > CaptureFreshnessStamp.Cells || s.X < 0 || s.Y < 0)))
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "Invalid attached popup measurement or freshness stamp.");
         return measured;
     }
 }

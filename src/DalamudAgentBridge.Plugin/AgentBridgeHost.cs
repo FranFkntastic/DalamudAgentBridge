@@ -173,7 +173,7 @@ public sealed class AgentBridgeHost : IDisposable
             $"{runtimeIdentity.PluginInternalName}.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"), new("leased-plugin-window-measurement"),
-                new("plugin-surface-freshness-stamp"),
+                new("plugin-surface-freshness-stamp"), new(PluginSurfaceWindowMeasurement.PopupCapability),
                 new("plugin-lifecycle"), new("plugin-runtime-identity"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
                 new("situation", 2), new("navigation"), new("specialist-cockpit"), new("penumbra-crash-reporter"),
             ],
