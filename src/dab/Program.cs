@@ -123,6 +123,11 @@ catch (OperationCanceledException)
     Console.Error.WriteLine(JsonSerializer.Serialize(new { success = false, error = "Operation cancelled or timed out." }, json));
     return 2;
 }
+catch (WindowsGraphicsCaptureException exception)
+{
+    Console.Error.WriteLine(JsonSerializer.Serialize(new { success = false, failure = exception.Failure.ToString(), error = exception.Message }, json));
+    return 1;
+}
 catch (Exception exception)
 {
     Console.Error.WriteLine(JsonSerializer.Serialize(new { success = false, error = exception.Message }, json));

@@ -312,6 +312,10 @@ app.MapPost("/api/plugin-surfaces/{surfaceId}/captures", async (
     {
         return Results.Problem($"Plugin surface capture failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
+    catch (WindowsGraphicsCaptureException ex)
+    {
+        return Results.Json(new { success = false, failure = ex.Failure.ToString(), message = ex.Message }, statusCode: 502);
+    }
 });
 
 app.MapPost("/api/plugin-surfaces/{surfaceId}/interaction-captures", async (
@@ -338,6 +342,10 @@ app.MapPost("/api/plugin-surfaces/{surfaceId}/interaction-captures", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or InvalidDataException or ArgumentException)
     {
         return Results.Problem($"Plugin surface interaction capture failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (WindowsGraphicsCaptureException ex)
+    {
+        return Results.Json(new { success = false, failure = ex.Failure.ToString(), message = ex.Message }, statusCode: 502);
     }
 });
 

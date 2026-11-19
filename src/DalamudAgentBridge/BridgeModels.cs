@@ -101,6 +101,7 @@ public sealed record BridgeCaptureReceipt
     public string? TransactionId { get; init; }
     public long? FrameId { get; init; }
     public uint? ViewportId { get; init; }
+    public CaptureFreshnessStamp? Stamp { get; init; }
 }
 
 public sealed record PluginCaptureReviewReceipt(
