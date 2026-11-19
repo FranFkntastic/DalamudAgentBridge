@@ -69,10 +69,82 @@ public sealed class WindowsGraphicsCaptureService
         if (previous == nint.Zero)
             throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.TargetUnsupported, "Physical-pixel window capture is unavailable.");
         try { return CaptureRenderedWindowCore(processId, region, cancellationToken); }
+        catch (OverflowException ex)
+        {
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The measured geometry exceeds the supported coordinate range.", ex);
+        }
         finally { SetThreadDpiAwarenessContext(previous); }
     }
 
     private static WindowsGraphicsCapture CaptureRenderedWindowCore(int processId, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (region.Attached is { Length: > 0 })
+            return CaptureComposite(processId, region, cancellationToken);
+        using var bitmap = ReadPlatform(processId, MainRegion(region), cancellationToken);
+        try
+        {
+            using var cropped = bitmap.Clone(new Rectangle(region.X, region.Y, region.Width, region.Height), PixelFormat.Format32bppArgb);
+            return Encode(cropped, cancellationToken);
+        }
+        finally { Wipe(bitmap); }
+    }
+
+    private static WindowsGraphicsCapture CaptureComposite(int processId, PluginSurfaceWindowMeasurement main, CancellationToken token)
+    {
+        var layout = SurfaceCompositeLayout.From(main);
+        ValidateDimensions(layout.ScreenBounds.Width, layout.ScreenBounds.Height, "composite");
+        PopupRegion[] regions = [MainRegion(main), .. main.Attached!];
+        var crops = new Bitmap?[regions.Length];
+        try
+        {
+            foreach (var group in Enumerable.Range(0, regions.Length).GroupBy(i => regions[i].WindowHandle))
+            {
+                var first = regions[group.First()];
+                using var bitmap = ReadPlatform(processId, first, token, PixelFormat.Format32bppRgb);
+                try
+                {
+                    foreach (var i in group)
+                    {
+                        var r = regions[i];
+                        ValidateRegion(r.X, r.Y, r.Width, r.Height, bitmap.Width, bitmap.Height);
+                        if (r.ScreenX != first.ScreenX || r.ScreenY != first.ScreenY || r.ViewportId != first.ViewportId)
+                            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "Conflicting measurements for one platform window.");
+                        if (i != group.First()) VerifyStamp(bitmap, r);
+                        // GDI does not guarantee alpha. Covered pixels are opaque; gaps alone are transparent.
+                        crops[i] = bitmap.Clone(new Rectangle(r.X, r.Y, r.Width, r.Height), PixelFormat.Format32bppRgb);
+                    }
+                }
+                finally { Wipe(bitmap); }
+            }
+            using var result = new Bitmap(layout.ScreenBounds.Width, layout.ScreenBounds.Height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(result))
+            {
+                g.Clear(Color.Transparent);
+                for (var i = 0; i < crops.Length; i++)
+                {
+                    var rect = i == 0 ? layout.MainRect : layout.Attached[i - 1].Rect;
+                    g.DrawImageUnscaled(crops[i]!, rect.X, rect.Y);
+                }
+            }
+            return Encode(result, token);
+        }
+        finally
+        {
+            foreach (var crop in crops)
+                if (crop != null) { Wipe(crop); crop.Dispose(); }
+        }
+    }
+
+    private static PopupRegion MainRegion(PluginSurfaceWindowMeasurement main)
+    {
+        var stamp = main.Stamp ?? throw new InvalidDataException("A verified window capture requires a freshness stamp.");
+        return new(0, main.SurfaceId, main.WindowHandle, main.ViewportId, main.X, main.Y, main.Width, main.Height,
+            main.ScreenX, main.ScreenY, stamp with { X = checked(main.X + stamp.X), Y = checked(main.Y + stamp.Y) });
+    }
+
+    private static Bitmap ReadPlatform(int processId, PopupRegion region, CancellationToken cancellationToken,
+        PixelFormat format = PixelFormat.Format32bppArgb)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var handle = (nint)region.WindowHandle;
@@ -82,16 +154,17 @@ public sealed class WindowsGraphicsCaptureService
         ValidateRegion(region.X, region.Y, region.Width, region.Height, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
         if (bounds.Left != region.ScreenX || bounds.Top != region.ScreenY)
             throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin platform window moved before capture.");
-        using var bitmap = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, PixelFormat.Format32bppArgb);
+        var bitmap = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, format);
         try
         {
-            return ReadAndEncode(bitmap, processId, handle, bounds, region, cancellationToken);
+            ReadAndVerify(bitmap, processId, handle, bounds, region, cancellationToken);
+            return bitmap;
         }
-        finally { Wipe(bitmap); }
+        catch { Wipe(bitmap); bitmap.Dispose(); throw; }
     }
 
-    private static WindowsGraphicsCapture ReadAndEncode(Bitmap bitmap, int processId, nint handle,
-        WindowRect bounds, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
+    private static void ReadAndVerify(Bitmap bitmap, int processId, nint handle,
+        WindowRect bounds, PopupRegion region, CancellationToken cancellationToken)
     {
         using (var graphics = Graphics.FromImage(bitmap))
         {
@@ -107,10 +180,18 @@ public sealed class WindowsGraphicsCaptureService
         ValidateWindowOwnership(processId, handle);
         if (!TryGetClientBounds(handle, out var after) || !bounds.Equals(after))
             throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin platform window moved during capture.");
-        var stamp = region.Stamp ?? throw new InvalidDataException("A verified window capture requires a freshness stamp.");
+        VerifyStamp(bitmap, region);
+    }
+
+    private static void VerifyStamp(Bitmap bitmap, PopupRegion region)
+    {
+        var stamp = region.ViewportStamp;
+        if (stamp.X < region.X || stamp.Y < region.Y || (long)stamp.X + stamp.Width > (long)region.X + region.Width ||
+            (long)stamp.Y + stamp.Height > (long)region.Y + region.Height)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, $"Freshness stamp outside '{region.Name}'.");
         var reading = stamp.Decode((x, y) =>
         {
-            var pixel = bitmap.GetPixel(region.X + x, region.Y + y);
+            var pixel = bitmap.GetPixel(x, y);
             return (54 * pixel.R + 183 * pixel.G + 19 * pixel.B) >> 8;
         }, out var seen);
         if (reading != StampReading.Match)
@@ -121,13 +202,16 @@ public sealed class WindowsGraphicsCaptureService
             throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.StaleFrame,
                 $"Freshness stamp: {observation}. Windows may not be composing this window: display asleep, session locked, or window occluded/minimized.");
         }
-        using var cropped = bitmap.Clone(new Rectangle(region.X, region.Y, region.Width, region.Height), PixelFormat.Format32bppArgb);
+    }
+
+    private static WindowsGraphicsCapture Encode(Bitmap cropped, CancellationToken cancellationToken)
+    {
         using var output = new MemoryStream();
         try
         {
             cropped.Save(output, ImageFormat.Png);
             cancellationToken.ThrowIfCancellationRequested();
-            return new(output.ToArray(), region.Width, region.Height);
+            return new(output.ToArray(), cropped.Width, cropped.Height);
         }
         finally
         {
