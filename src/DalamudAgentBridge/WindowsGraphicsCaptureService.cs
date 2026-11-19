@@ -25,21 +25,40 @@ public sealed class WindowsGraphicsCaptureService
             throw new InvalidOperationException("A platform-window capture is still completing.");
         // PrintWindow is synchronous native work. Bound the caller, but retain the slot until
         // native completion so repeated timeouts cannot accumulate blocked capture workers.
-        var task = Task.Run(() =>
+        var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromMilliseconds(1500));
+        WindowsGraphicsCaptureException? lastStale = null;
+        var token = deadline.Token;
+        var task = Task.Run(async () =>
         {
-            try { return CaptureRenderedWindow(processId, region, cancellationToken); }
+            try
+            {
+                for (var attempt = 1; ; attempt++)
+                {
+                    try { return CaptureRenderedWindow(processId, region, token); }
+                    catch (WindowsGraphicsCaptureException ex) when (ex.Failure == WindowsGraphicsCaptureFailure.StaleFrame && attempt < 6)
+                    {
+                        Volatile.Write(ref lastStale, ex);
+                        await Task.Delay(175, token).ConfigureAwait(false);
+                    }
+                }
+            }
             finally { windowCaptureLock.Release(); }
         });
-        try { return await task.WaitAsync(DefaultTimeout, cancellationToken).ConfigureAwait(false); }
-        catch
+        try { return await task.WaitAsync(token).ConfigureAwait(false); }
+        catch (Exception ex)
         {
             _ = task.ContinueWith(completed =>
             {
                 if (completed.Status == TaskStatus.RanToCompletion) CryptographicOperations.ZeroMemory(completed.Result.PngBytes);
                 else _ = completed.Exception;
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            if (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+                throw Volatile.Read(ref lastStale) ?? new WindowsGraphicsCaptureException(
+                    WindowsGraphicsCaptureFailure.TimedOut, "Platform window capture exceeded the freshness deadline.");
             throw;
         }
+        finally { deadline.Dispose(); }
     }
 
     private static WindowsGraphicsCapture CaptureRenderedWindow(int processId, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
@@ -63,6 +82,16 @@ public sealed class WindowsGraphicsCaptureService
         if (bounds.Left != region.ScreenX || bounds.Top != region.ScreenY)
             throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin platform window moved before capture.");
         using var bitmap = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, PixelFormat.Format32bppArgb);
+        try
+        {
+            return ReadAndEncode(bitmap, processId, handle, bounds, region, cancellationToken);
+        }
+        finally { Wipe(bitmap); }
+    }
+
+    private static WindowsGraphicsCapture ReadAndEncode(Bitmap bitmap, int processId, nint handle,
+        WindowRect bounds, PluginSurfaceWindowMeasurement region, CancellationToken cancellationToken)
+    {
         using (var graphics = Graphics.FromImage(bitmap))
         {
             var dc = graphics.GetHdc();
@@ -77,6 +106,20 @@ public sealed class WindowsGraphicsCaptureService
         ValidateWindowOwnership(processId, handle);
         if (!TryGetClientBounds(handle, out var after) || !bounds.Equals(after))
             throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.InvalidFrame, "The plugin platform window moved during capture.");
+        var stamp = region.Stamp ?? throw new InvalidDataException("A verified window capture requires a freshness stamp.");
+        var reading = stamp.Decode((x, y) =>
+        {
+            var pixel = bitmap.GetPixel(region.X + x, region.Y + y);
+            return (54 * pixel.R + 183 * pixel.G + 19 * pixel.B) >> 8;
+        }, out var seen);
+        if (reading != StampReading.Match)
+        {
+            var observation = reading == StampReading.Different
+                ? $"different nonce 0x{seen:X8} (expected 0x{stamp.Nonce:X8})"
+                : reading.ToString().ToLowerInvariant();
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.StaleFrame,
+                $"Freshness stamp: {observation}. Windows may not be composing this window: display asleep, session locked, or window occluded/minimized.");
+        }
         using var cropped = bitmap.Clone(new Rectangle(region.X, region.Y, region.Width, region.Height), PixelFormat.Format32bppArgb);
         using var output = new MemoryStream();
         try
@@ -88,7 +131,15 @@ public sealed class WindowsGraphicsCaptureService
         finally
         {
             if (output.TryGetBuffer(out var buffer)) CryptographicOperations.ZeroMemory(buffer.AsSpan());
+            Wipe(cropped);
         }
+    }
+
+    private static void Wipe(Bitmap bitmap)
+    {
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+        graphics.Clear(Color.FromArgb(0));
     }
 
     internal static void ValidateRegion(int x, int y, int width, int height, int platformWidth, int platformHeight)
@@ -292,6 +343,8 @@ public enum WindowsGraphicsCaptureFailure
     InvalidFrame,
     TimedOut,
     CaptureFailed,
+    StaleFrame,
+    ConnectorTooOld,
 }
 
 public sealed class WindowsGraphicsCaptureException : Exception

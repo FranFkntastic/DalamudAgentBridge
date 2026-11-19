@@ -39,7 +39,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation;
     private readonly Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport;
     private readonly Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface;
-    private readonly Func<string, CancellationToken, Task<PluginSurfaceWindowMeasurement>> measurePluginSurface;
+    private readonly Func<string, int, CancellationToken, Task<PluginSurfaceWindowMeasurement>> measurePluginSurface;
     private readonly Func<object> createPluginSnapshot;
     private readonly Func<string, bool?, object> getPluginRuntimeIdentity;
     private readonly Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog;
@@ -87,7 +87,7 @@ public sealed class AgentBridgeHost : IDisposable
         Func<string, AgentBridgeUiCaptureTransactionResult> cancelCapturePresentation,
         Func<bool, CancellationToken, Task<AgentBridgeCaptureReceipt>> captureViewport,
         Func<string, CancellationToken, Task<AgentBridgeCaptureReceipt>> capturePluginSurface,
-        Func<string, CancellationToken, Task<PluginSurfaceWindowMeasurement>> measurePluginSurface,
+        Func<string, int, CancellationToken, Task<PluginSurfaceWindowMeasurement>> measurePluginSurface,
         Func<object> createPluginSnapshot,
         Func<string, bool?, object> getPluginRuntimeIdentity,
         Func<string?, AgentBridgePluginSurfaceCatalog> createPluginSurfaceCatalog,
@@ -173,6 +173,7 @@ public sealed class AgentBridgeHost : IDisposable
             $"{runtimeIdentity.PluginInternalName}.snapshot.v2",
             [
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"), new("leased-plugin-window-measurement"),
+                new("plugin-surface-freshness-stamp"),
                 new("plugin-lifecycle"), new("plugin-runtime-identity"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
                 new("situation", 2), new("navigation"), new("specialist-cockpit"), new("penumbra-crash-reporter"),
             ],
@@ -436,7 +437,9 @@ public sealed class AgentBridgeHost : IDisposable
             case "measure-plugin-surface-window":
                 if (!configuration.EnableScreenshots) return AgentBridgeResponse.Fail("Agent Bridge screenshots are disabled.");
                 if (string.IsNullOrWhiteSpace(request.TransactionId)) return AgentBridgeResponse.Fail("An active plugin presentation lease is required.");
-                try { return AgentBridgeResponse.Ok("Presented plugin window measured.", await measurePluginSurface(request.TransactionId, cancellationToken).ConfigureAwait(false)); }
+                if (request.Arguments is not { ValueKind: JsonValueKind.Number } argument || !argument.TryGetInt32(out var nonce))
+                    return AgentBridgeResponse.Fail("A freshness nonce is required; update the capture utility.");
+                try { return AgentBridgeResponse.Ok("Presented plugin window measured.", await measurePluginSurface(request.TransactionId, nonce, cancellationToken).ConfigureAwait(false)); }
                 catch (Exception exception) { return AgentBridgeResponse.Fail($"Plugin window measurement failed: {exception.Message}"); }
             case "send-chat":
                 if (string.IsNullOrWhiteSpace(request.Target)) return AgentBridgeResponse.Fail("A chat line is required.");

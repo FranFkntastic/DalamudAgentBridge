@@ -80,11 +80,12 @@ public sealed class PluginSurfaceCaptureService
         CancellationToken cancellationToken)
     {
         var instance = client.Resolve(connector);
-        var measurement = await MeasureAsync(instance, transactionId, cancellationToken).ConfigureAwait(false);
+        var nonce = BitConverter.ToInt32(RandomNumberGenerator.GetBytes(sizeof(int)));
+        var measurement = await MeasureAsync(instance, transactionId, nonce, cancellationToken).ConfigureAwait(false);
         var captured = await capture.CaptureWindowAsync(instance.ProcessId, measurement, cancellationToken).ConfigureAwait(false);
         try
         {
-            var after = await MeasureAsync(instance, transactionId, cancellationToken).ConfigureAwait(false);
+            var after = await MeasureAsync(instance, transactionId, nonce, cancellationToken).ConfigureAwait(false);
             if (!measurement.HasSameTargetAndGeometry(after))
                 throw new InvalidOperationException("The leased plugin window changed during capture; no review was published.");
             var receipt = new BridgeCaptureReceipt
@@ -99,6 +100,7 @@ public sealed class PluginSurfaceCaptureService
                 Scope = "PluginSurface", CaptureMethod = "PrintWindowRenderFullContent",
                 TargetPlugin = measurement.TargetPlugin, TransactionId = transactionId,
                 ViewportId = measurement.ViewportId, FrameId = measurement.CompletedFrame,
+                Stamp = measurement.Stamp,
             };
             var review = reviewVault.Store(receipt, captured.PngBytes);
             return new(AgentBridgeClient.ToView(instance), receipt, review, $"/api/reviews/{review.Id}.png");
@@ -108,14 +110,20 @@ public sealed class PluginSurfaceCaptureService
 
     internal void DeleteReview(PluginCaptureReviewReceipt captured) => reviewVault.Delete(captured.Review.Id);
 
-    private async Task<PluginSurfaceWindowMeasurement> MeasureAsync(BridgeInstance instance, string transactionId, CancellationToken cancellationToken)
+    private async Task<PluginSurfaceWindowMeasurement> MeasureAsync(BridgeInstance instance, string transactionId, int nonce, CancellationToken cancellationToken)
     {
         var response = await pipe.SendAsync(instance, "measure-plugin-surface-window",
-            new BridgeCommandRequest { TransactionId = transactionId }, cancellationToken).ConfigureAwait(false);
+            new BridgeCommandRequest { TransactionId = transactionId, Arguments = JsonSerializer.SerializeToElement(nonce) }, cancellationToken).ConfigureAwait(false);
         if (!response.Success || response.Receipt is not { } receipt)
             throw new InvalidOperationException($"Cannot measure the leased plugin window. {response.Message}");
         var measured = receipt.Deserialize<PluginSurfaceWindowMeasurement>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidDataException("Plugin window measurement was empty.");
+        if (measured.Stamp is not { } stamp)
+            throw new WindowsGraphicsCaptureException(WindowsGraphicsCaptureFailure.ConnectorTooOld,
+                "Connector too old for verified capture; update DalamudAgentBridge plugin.");
+        if (stamp.Nonce != nonce || stamp.CellsPerRow is < 1 or > CaptureFreshnessStamp.Cells || stamp.X < 0 || stamp.Y < 0 ||
+            (long)stamp.X + stamp.Width > measured.Width || (long)stamp.Y + stamp.Height > measured.Height)
+            throw new InvalidDataException("Plugin window measurement returned invalid freshness stamp data.");
         if (measured.TransactionId != transactionId || string.IsNullOrWhiteSpace(measured.RuntimeInstanceId) ||
             string.IsNullOrWhiteSpace(measured.TargetPlugin) || string.IsNullOrWhiteSpace(measured.SurfaceId) ||
             measured.ViewportId == 0 || measured.CompletedFrame < 0)

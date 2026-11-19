@@ -12,6 +12,11 @@ namespace DalamudAgentBridge.Mcp;
 public sealed class AgentBridgeTools
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static CallToolResult CaptureFailure(WindowsGraphicsCaptureException ex) => new()
+    {
+        IsError = true,
+        Content = [new TextContentBlock { Text = $"{ex.Failure}: {ex.Message}" }],
+    };
     private readonly AgentBridgeClient client;
     private readonly PluginLifecycleClient lifecycle;
     private readonly DevPluginDeploymentService deployment;
@@ -118,8 +123,9 @@ public sealed class AgentBridgeTools
         [Description("Optional FFXIV process id.")] int? processId = null,
         CancellationToken cancellationToken = default)
     {
-        var receipt = await surfaceCapture.CaptureAsync(
-            plugin, surfaceId, profile, processId, cancellationToken).ConfigureAwait(false);
+        PluginSurfaceCaptureReviewReceipt receipt;
+        try { receipt = await surfaceCapture.CaptureAsync(plugin, surfaceId, profile, processId, cancellationToken).ConfigureAwait(false); }
+        catch (WindowsGraphicsCaptureException ex) { return CaptureFailure(ex); }
         if (!reviewVault.TryRead(receipt.Capture.Review.Id, out var pngBytes))
             throw new InvalidOperationException("The verified surface review image could not be read from the short-lived vault.");
         try
@@ -153,8 +159,9 @@ public sealed class AgentBridgeTools
         {
             PropertyNameCaseInsensitive = true,
         }) ?? throw new ArgumentException("The surface input sequence JSON was empty.");
-        var receipt = await surfaceInteraction.InteractAndCaptureAsync(
-            plugin, surfaceId, sequence, profile, processId, cancellationToken).ConfigureAwait(false);
+        PluginSurfaceInteractionCaptureReviewReceipt receipt;
+        try { receipt = await surfaceInteraction.InteractAndCaptureAsync(plugin, surfaceId, sequence, profile, processId, cancellationToken).ConfigureAwait(false); }
+        catch (WindowsGraphicsCaptureException ex) { return CaptureFailure(ex); }
         if (!reviewVault.TryRead(receipt.Capture.Review.Id, out var pngBytes))
             throw new InvalidOperationException("The verified interacted surface review image could not be read from the short-lived vault.");
         try
