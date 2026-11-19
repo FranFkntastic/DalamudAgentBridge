@@ -26,7 +26,8 @@ public sealed class WindowsGraphicsCaptureService
         // PrintWindow is synchronous native work. Bound the caller, but retain the slot until
         // native completion so repeated timeouts cannot accumulate blocked capture workers.
         var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromMilliseconds(1500));
+        deadline.CancelAfter(DefaultTimeout);
+        var retryUntil = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency * 3 / 2;
         WindowsGraphicsCaptureException? lastStale = null;
         var token = deadline.Token;
         var task = Task.Run(async () =>
@@ -36,7 +37,7 @@ public sealed class WindowsGraphicsCaptureService
                 for (var attempt = 1; ; attempt++)
                 {
                     try { return CaptureRenderedWindow(processId, region, token); }
-                    catch (WindowsGraphicsCaptureException ex) when (ex.Failure == WindowsGraphicsCaptureFailure.StaleFrame && attempt < 6)
+                    catch (WindowsGraphicsCaptureException ex) when (ex.Failure == WindowsGraphicsCaptureFailure.StaleFrame && System.Diagnostics.Stopwatch.GetTimestamp() < retryUntil)
                     {
                         Volatile.Write(ref lastStale, ex);
                         await Task.Delay(175, token).ConfigureAwait(false);
@@ -55,7 +56,7 @@ public sealed class WindowsGraphicsCaptureService
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             if (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)
                 throw Volatile.Read(ref lastStale) ?? new WindowsGraphicsCaptureException(
-                    WindowsGraphicsCaptureFailure.TimedOut, "Platform window capture exceeded the freshness deadline.");
+                    WindowsGraphicsCaptureFailure.TimedOut, "Platform window capture did not complete within its deadline.");
             throw;
         }
         finally { deadline.Dispose(); }
