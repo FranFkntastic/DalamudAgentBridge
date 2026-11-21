@@ -233,6 +233,7 @@ public sealed class AgentBridgeClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(transactionId);
         ArgumentNullException.ThrowIfNull(sequence);
+        sequence = sequence.Normalize();
         var connector = Resolve(new BridgeTargetSelector("DalamudAgentBridge", profile, processId));
         var response = await pipe.SendAsync(
             connector,

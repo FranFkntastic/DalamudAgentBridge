@@ -234,10 +234,11 @@ internal sealed class DabCommandLine
         if (Value("sequence") is not null && Value("sequence-file") is not null)
             throw new ArgumentException("Use either --sequence or --sequence-file, not both.");
         var value = Value("sequence-file") is { } path ? File.ReadAllText(path) : Required("sequence");
-        return JsonSerializer.Deserialize<PluginSurfaceInputSequenceRequest>(value, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        var sequence = JsonSerializer.Deserialize<PluginSurfaceInputSequenceRequest>(value, new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             PropertyNameCaseInsensitive = true,
         }) ?? throw new ArgumentException("Option '--sequence' must contain a surface input sequence JSON object.");
+        return sequence.Normalize();
     }
 
     public BridgeWaitCondition Condition(string pathName, string equalsName) =>

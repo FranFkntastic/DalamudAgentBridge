@@ -200,6 +200,20 @@ Plugins may expose their own rendered ImGui controls through the shared `AgentBr
 
 For visual testing of unsupported third-party plugins, the user can separately enable bounded surface input in `/dab`. `bridge_surface_interact_capture` then presents one discovered `IWindow` under a runtime-bound lease, maps normalized pointer coordinates only into that window, delivers a short move/click/scroll/drag/text/navigation-key sequence through ImGui's own input queue, captures the settled window, and restores its prior state. It never emits Win32 input, activates the desktop, or targets native FFXIV UI; stale leases, runtime changes, competing sequences, invalid coordinates, and oversized input are refused.
 
+Input sequences are JSON objects of the form `{"schemaVersion": 1, "steps": [...]}`.
+Click, drag, move, scroll, and key steps accept an optional `modifiers` array of
+`Ctrl`, `Shift`, and `Alt`, held for that step only, for example a Ctrl+click:
+
+```json
+{"schemaVersion": 2, "steps": [{"kind": "click", "x": 0.5, "y": 0.4, "modifiers": ["Ctrl"]}]}
+```
+
+A sequence that carries modifiers uses `schemaVersion` 2; `dab` and `dab-mcp`
+raise it automatically. In-game connectors that predate modifier support refuse
+version 2 rather than silently dropping the keys. Unknown or duplicate modifier
+names and modifiers on `text` or `wait` steps are rejected before anything is
+presented, naming the offending step index.
+
 Agents that already know a stable control ID should use `GET /api/bridges/{bridgeId}/controls/{controlId}`. It returns only that control with the current reviewed frame ID and expiry, so the same small response supports guarded invocation and status polling without serializing the plugin's complete control surface.
 
 `POST /api/bridges/{bridgeId}/control-presentations` opens an advertised surface and returns up to sixteen requested controls from one current frame. `POST /api/bridges/{bridgeId}/control-actions` presents one control and invokes that exact reviewed frame in one request; it retains the same enabled-state, expiry, and replay checks as the two-request path.

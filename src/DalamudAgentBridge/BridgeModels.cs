@@ -129,11 +129,59 @@ public sealed record PluginSurfaceInputStepRequest(
     int MouseButton = 0,
     string? Text = null,
     string? Key = null,
-    int Frames = 1);
+    int Frames = 1,
+    IReadOnlyList<string>? Modifiers = null);
 
 public sealed record PluginSurfaceInputSequenceRequest(
     int SchemaVersion,
-    IReadOnlyList<PluginSurfaceInputStepRequest> Steps);
+    IReadOnlyList<PluginSurfaceInputStepRequest> Steps)
+{
+    /// <summary>Lowest sequence schema version that carries per-step modifier keys.</summary>
+    public const int ModifierSchemaVersion = 2;
+
+    private static readonly string[] KnownModifiers = ["Ctrl", "Shift", "Alt"];
+
+    /// <summary>
+    /// Validates modifier keys, canonicalizes their spelling, and raises the schema version to
+    /// <see cref="ModifierSchemaVersion"/> when any step carries them so un-updated in-game
+    /// controllers refuse the sequence instead of silently dropping the modifiers.
+    /// </summary>
+    public PluginSurfaceInputSequenceRequest Normalize()
+    {
+        if (Steps is null)
+            throw new ArgumentException("The surface input sequence has no 'steps' array.");
+        var anyModifiers = false;
+        var steps = new PluginSurfaceInputStepRequest[Steps.Count];
+        for (var index = 0; index < Steps.Count; index++)
+        {
+            var step = Steps[index] ?? throw new ArgumentException($"Surface input step {index} is null.");
+            if (step.Modifiers is not { Count: > 0 } requested)
+            {
+                steps[index] = step.Modifiers is null ? step : step with { Modifiers = null };
+                continue;
+            }
+            if (string.Equals(step.Kind, "text", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(step.Kind, "wait", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException(
+                    $"Surface input step {index} ('{step.Kind}') has modifiers [{string.Join(", ", requested)}]; modifiers are only valid on click, drag, move, scroll, and key steps.");
+            var canonical = new List<string>(requested.Count);
+            foreach (var value in requested)
+            {
+                var match = KnownModifiers.FirstOrDefault(known => string.Equals(known, value?.Trim(), StringComparison.OrdinalIgnoreCase))
+                    ?? throw new ArgumentException(
+                        $"Surface input step {index} has unknown modifier '{value}'; expected Ctrl, Shift, or Alt.");
+                if (canonical.Contains(match))
+                    throw new ArgumentException($"Surface input step {index} lists modifier '{match}' more than once.");
+                canonical.Add(match);
+            }
+            steps[index] = step with { Modifiers = canonical };
+            anyModifiers = true;
+        }
+        return new PluginSurfaceInputSequenceRequest(
+            anyModifiers ? Math.Max(SchemaVersion, ModifierSchemaVersion) : SchemaVersion,
+            steps);
+    }
+}
 
 public sealed record PluginSurfaceInputReceipt(
     int SchemaVersion,
