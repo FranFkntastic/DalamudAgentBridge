@@ -27,6 +27,8 @@ public sealed class PluginSurfaceInteractionCaptureService
         int? processId,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(sequence);
+        sequence = sequence.Normalize(); // Fail fast before presenting the surface.
         var presentation = await client.BeginPluginSurfacePresentationAsync(
             plugin,
             surfaceId,

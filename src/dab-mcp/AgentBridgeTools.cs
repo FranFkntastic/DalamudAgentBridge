@@ -150,7 +150,7 @@ public sealed class AgentBridgeTools
     public async Task<CallToolResult> InteractAndCaptureSurface(
         [Description("Installed plugin internal name.")] string plugin,
         [Description("Reversible reflected surface id returned by bridge_surfaces.")] string surfaceId,
-        [Description("JSON object with schemaVersion 1 and bounded move, click, scroll, text, key, drag, or wait steps.")] string sequenceJson,
+        [Description("JSON object {schemaVersion, steps} with bounded move, click, scroll, text, key, drag, or wait steps. Click, drag, move, scroll, and key steps accept optional \"modifiers\": [\"Ctrl\"|\"Shift\"|\"Alt\"] held for that step (e.g. {\"kind\":\"click\",\"x\":0.5,\"y\":0.4,\"modifiers\":[\"Ctrl\"]}). schemaVersion is 2 when any step has modifiers, otherwise 1; it is raised to 2 automatically.")] string sequenceJson,
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
         [Description("Optional FFXIV process id.")] int? processId = null,
         CancellationToken cancellationToken = default)
@@ -159,6 +159,7 @@ public sealed class AgentBridgeTools
         {
             PropertyNameCaseInsensitive = true,
         }) ?? throw new ArgumentException("The surface input sequence JSON was empty.");
+        sequence = sequence.Normalize();
         PluginSurfaceInteractionCaptureReviewReceipt receipt;
         try { receipt = await surfaceInteraction.InteractAndCaptureAsync(plugin, surfaceId, sequence, profile, processId, cancellationToken).ConfigureAwait(false); }
         catch (WindowsGraphicsCaptureException ex) { return CaptureFailure(ex); }
