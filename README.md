@@ -30,10 +30,10 @@ The utility discovers named-pipe bridge advertisements under the current user's 
   [Franthropy](https://github.com/FranFkntastic/Franthropy) are needed only
   when building the in-game connector from source.
 
-Connector development expects this layout:
+Connector development expects a sibling checkout layout:
 
 ```text
-FFXIV-Development/
+workspace/
   DalamudAgentBridge/
   Franthropy/
 ```
@@ -68,20 +68,6 @@ The in-game connector discovers the local utility through its authenticated
 current-user bridge; no port, token, or consumer-plugin configuration is required.
 
 ## Run
-
-### Penumbra crash logging
-
-The connector snapshot includes `penumbraCrashReporter`: availability, the saved
-enabled setting, actual running state, Penumbra version/instance, game and reporter
-process IDs, and the output log path. Unsupported or unloaded Penumbra reports
-unavailable with unknown state, not a misleading disabled value.
-
-The connector window exposes the reviewed action
-`penumbra.crash-reporter.enabled`. It uses Penumbra's own persistent setting and
-verifies the resulting reporter state; it does not reload Penumbra, change mods,
-or require general plugin-window input permission. Reviews are rejected if the
-Penumbra instance or setting changes before invocation. The adapter is compatible
-with Penumbra's 1.7.0.12 service layout and fails closed on unsupported layouts.
 
 ```powershell
 .\Run-Bridge.ps1
@@ -194,6 +180,23 @@ The plugin encodes the crop in memory, protects the short handoff with Windows D
 
 This reduces accidental persistence and unauthorised local web access; it does not protect against a compromised Windows user account, a malicious local process, browser extensions with local access, or downstream systems that may retain pixels after display.
 
+### Capture files and full-screen review
+
+`dab screen --profile <alias> --out capture.png` captures the full viewport through
+the standalone DAB connector, including ImGui popups, without requiring a bridge
+in the photographed plugin. It does not open a plugin window.
+
+`capture`, `surface-capture`, and `surface-interact-capture` also accept `--out`.
+The exported PNG is decrypted and SHA-256 verified; an existing destination is
+never overwritten. Unlike the encrypted review vault, exported files have no
+automatic expiry: callers must protect and delete them when no longer needed.
+Reflected-window captures contain only that window's draw list, not its popups;
+use `screen` while the desired state is visible to include popups.
+
+For shells that strip native-argument quotes, use `--sequence-file input.json`
+instead of `--sequence` and `--arguments-file arguments.json` instead of inline
+action arguments. Each pair is mutually exclusive.
+
 ## Frame-validated control
 
 Plugins may expose their own rendered ImGui controls through the shared `AgentBridgeUiReviewRegistry`. Each control has a stable ID, visible bounds, value and enabled state, and is actionable only through its named semantic action. The utility must supply the current review-frame ID; the registry rejects stale, disabled, missing, or replayed controls. This is deliberately not arbitrary coordinate clicking or keyboard injection.
@@ -233,12 +236,17 @@ Dev-plugin bootstrap is a separate, narrower surface: `POST /api/bridges/{bridge
 
 For repeated development, `tools\Restart-BridgeUtility.ps1` builds through a staging directory, safely restarts a named loopback utility, verifies its DLL hash and listening port, and keeps the complete build and runtime logs under ignored `artifacts` storage.
 
-There is currently no retained automated test suite. Write or expand tests only
-when their actual assertions signal a specific problem too difficult for the
-agent to diagnose or repair alone AND seriously frustrating to the user; explain
-both conditions before authoring. Ordinary coverage, easy fixes, labels, and
-workflow habit are insufficient. See [Contributing](CONTRIBUTING.md#verification)
-for the full authorship rule and narrow source-only verification guidance.
+### Penumbra crash logging
+
+The connector snapshot includes `penumbraCrashReporter`: availability, the saved
+enabled setting, actual running state, Penumbra version/instance, game and reporter
+process IDs, and the output log path. Unsupported or unloaded Penumbra reports
+unavailable with unknown state rather than a misleading disabled value.
+
+The connector window exposes the reviewed action
+`penumbra.crash-reporter.enabled`. It updates Penumbra's persistent setting and
+verifies the resulting reporter state without reloading Penumbra, changing mods,
+or requiring general plugin-window input permission.
 
 ## Connect an agent
 
@@ -248,23 +256,6 @@ capture, deployment, and reviewed-action tools over MCP stdio. Follow the
 `config.toml` registration, verification, and approval defaults.
 
 ## Releases
-
-### Capture files and full-screen review
-
-`dab screen --profile <alias> --out capture.png` captures the full viewport through
-the standalone DAB connector, including ImGui popups, without requiring a bridge
-in the photographed plugin. It does not open a plugin window.
-
-`capture`, `surface-capture`, and `surface-interact-capture` also accept `--out`.
-The exported PNG is decrypted and SHA-256 verified; an existing destination is
-never overwritten. Unlike the encrypted review vault, exported files have no
-automatic expiry: callers must protect and delete them when no longer needed.
-Reflected-window captures contain only that window's draw list, not its popups;
-use `screen` while the desired state is visible to include popups.
-
-For shells that strip native-argument quotes, use `--sequence-file input.json`
-instead of `--sequence` and `--arguments-file arguments.json` instead of inline
-action arguments. Each pair is mutually exclusive.
 
 Tagged releases provide Windows x64 utility and MCP bundles. Building the
 in-game connector still requires a local Dalamud development installation;
@@ -278,9 +269,7 @@ Bridge-enabled plugins publish `agent-bridge/discovery-<pid>.json` beneath their
 
 ## Contributing
 
-Pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), target
-`main`, and keep live-client testing separate from
-source-only verification. Security-sensitive reports belong in GitHub's private
-vulnerability reporting flow described in [SECURITY.md](SECURITY.md).
+Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+and [SECURITY.md](SECURITY.md) for reporting vulnerabilities privately.
 
 DAB is licensed under the [GNU General Public License v3.0](LICENSE).
