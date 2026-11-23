@@ -16,7 +16,7 @@ only when changing the in-game connector, which consumes the patch-sensitive
 `Franthropy.Dalamud` adapter as source:
 
 ```text
-FFXIV-Development/
+workspace/
   DalamudAgentBridge/
   Franthropy/
 ```
@@ -41,23 +41,9 @@ content and history before pushing.
 
 ## Verification
 
-Use the smallest source-only check that proves the change; do not run broad
-suites by default. CI builds the CLI and MCP server and publishes the utility
-and MCP server. There is currently no retained automated test suite.
-
-Write or expand a test only when its actual assertions signal a specific problem
-that would be too difficult for the agent to diagnose or repair on its own AND
-would seriously frustrate the user. Explain both conditions before authoring,
-including the plausible unadvised edit to maintained code, the assertion that
-would fail, and the serious user harm it detects. Ordinary coverage, easy fixes,
-security or race labels, source-token checks, coverage targets, and workflow
-habit are not sufficient. This authorship rule does not independently authorize
-deleting existing tests or bypassing configured gates.
-
-Live client actions, slash
-commands, screenshots, plugin reloads, and game-state mutation are never implied
-by a test request; describe any live verification separately and obtain the
-client owner's permission first.
+CI builds the CLI and MCP server and publishes the utility and MCP bundles.
+Verify your changes by building the affected projects, and note in your pull
+request what was checked via source builds versus tested in-game.
 
 Changes to frame-reviewed controls must preserve stable semantic IDs,
 current-frame validation, expiry, replay resistance, rendered-state checks, and
