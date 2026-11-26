@@ -26,24 +26,14 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 - Windows 10 version 1809 or newer.
 - The .NET 8 SDK for the utility, CLI, and MCP server.
 - The .NET 10 SDK is additionally required for connector development.
-- A development Dalamud installation and sibling checkout of
-  [Franthropy](https://github.com/FranFkntastic/Franthropy) are needed only
-  when building the in-game connector from source.
+- A development Dalamud installation is needed only when building the
+  in-game connector from source.
 
-Connector development expects a sibling checkout layout:
-
-```text
-workspace/
-  DalamudAgentBridge/
-  Franthropy/
-```
-
-Set `FranthropyDalamudProject` at build time if the repositories live elsewhere.
-Connector builds require that checkout to be clean and exactly at the revision
-recorded in `Franthropy.commit`; this makes the bundled patch-sensitive adapter
-reproducible instead of silently consuming whichever sibling revision happens
-to be present. GitHub CI verifies the same receipt against a checkout of that
-commit.
+The pinned Franthropy version lives in `eng/Franthropy.Version.props`. To build
+against Franthropy source, check out the commit after `0.1.0-commit.` in that
+file from [Franthropy](https://github.com/FranFkntastic/Franthropy) and pass
+`-p:FranthropySource=Local -p:FranthropyRoot=<absolute-source-root>`; GitHub CI
+builds against a checkout of that same commit. See `eng/Franthropy.md`.
 The utility, CLI, and MCP server consume the published
 `Franthropy.AgentBridge` package and build from a standalone DAB checkout.
 

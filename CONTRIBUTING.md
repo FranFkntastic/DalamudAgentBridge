@@ -10,22 +10,12 @@ Open an issue before making a large protocol, security-boundary, or architecture
 change. Small fixes can go directly to a pull request.
 
 The utility, CLI, and MCP server build from this repository
-alone using the published `Franthropy.AgentBridge` package. Clone
-[Franthropy](https://github.com/FranFkntastic/Franthropy) beside this repository
-only when changing the in-game connector, which consumes the patch-sensitive
-`Franthropy.Dalamud` adapter as source:
-
-```text
-workspace/
-  DalamudAgentBridge/
-  Franthropy/
-```
-
-The build accepts `FranthropyDalamudProject` when you need a different layout.
-Before building the connector, check out the exact revision recorded in
-`Franthropy.commit` and leave that checkout clean. The connector build verifies
-this receipt automatically, while utility and MCP work remains independent of
-the sibling checkout.
+alone using the published `Franthropy.AgentBridge` package. To build the
+in-game connector against Franthropy source, clone
+[Franthropy](https://github.com/FranFkntastic/Franthropy), check out the commit
+after `0.1.0-commit.` in `eng/Franthropy.Version.props`, and build with
+`-p:FranthropySource=Local -p:FranthropyRoot=<absolute-source-root>`.
+See `eng/Franthropy.md` for details.
 
 ## Branch and Pull Request Flow
 
