@@ -200,6 +200,15 @@ public sealed class AgentBridgeTools
             Target("DalamudAgentBridge", profile, processId),
             cancellationToken).ConfigureAwait(false));
 
+    [McpServerTool(Name = "bridge_memory", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read memory diagnostics for the game process hosting DAB: private bytes and working set, the shared .NET GC heap used by every loaded plugin, an estimate of non-GC (game, graphics, native) private bytes, machine-wide commit headroom, and a once-a-minute history with growth rates since DAB loaded. Use it to tell a slow leak from a heavy baseline before bisecting plugins. Read-only.")]
+    public async Task<string> Memory(
+        [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",
+        [Description("Optional FFXIV process id when a profile has multiple clients.")] int? processId = null,
+        CancellationToken cancellationToken = default) =>
+        Json(await client.GetMemoryAsync(
+            Target("DalamudAgentBridge", profile, processId),
+            cancellationToken).ConfigureAwait(false));
+
     [McpServerTool(Name = "bridge_navigation", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Read DAB's current or most recent navigation operation, including destination, distance, progress timestamp, deadline, and vnavmesh lifecycle. Read-only.")]
     public async Task<string> Navigation(
         [Description("XIVLauncher profile alias or stable profile id. Defaults to primary.")] string profile = "primary",

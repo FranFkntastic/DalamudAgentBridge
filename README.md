@@ -12,6 +12,7 @@ The utility discovers named-pipe bridge advertisements under the current user's 
 - [Run](#run)
 - [Safety boundary](#safety-boundary)
 - [Situation and navigation](#situation-and-navigation)
+- [Memory diagnostics](#memory-diagnostics)
 - [Specialist cockpit](#specialist-cockpit)
 - [Screenshot privacy](#screenshot-privacy)
 - [Frame-validated control](#frame-validated-control)
@@ -124,6 +125,28 @@ progress time, refuses unsafe client states or territory changes, and exposes
 status and guarded cancellation through `bridge_navigation` and
 `bridge_navigation_cancel`. The permission can only be enabled by the user in
 the in-game `/dab` window; an agent cannot turn it on through a reviewed action.
+
+## Memory diagnostics
+
+`bridge_memory` (HTTP `GET /api/bridges/{id}/memory`) reports memory for the
+game process hosting the connector:
+
+- Process private bytes, working set and peak, virtual size, handles, and threads.
+- The shared .NET GC heap: heap size, committed, fragmented, cumulative
+  allocations, per-generation sizes and collection counts, and pause time.
+  Every loaded Dalamud plugin shares this heap, so it covers all plugins together.
+- `nonGcPrivateBytesEstimate`: private bytes minus GC-committed bytes, which is
+  the game, D3D11 system-memory resources, native libraries, and unmanaged plugin
+  allocations.
+- Machine-wide physical memory and commit headroom. Allocations fail everywhere
+  once commit reaches its limit, which matters when multiboxing.
+- A once-a-minute history of up to four hours, kept from the moment DAB loads, and
+  a trend with growth since the first sample and a per-minute rate over the newest
+  30 samples.
+
+Use it to tell a heavy baseline from a slow leak, and managed growth from native
+growth, before bisecting plugins with the lifecycle commands. It reads only
+process and runtime counters, never game memory, and needs no permission.
 
 ## Specialist cockpit
 

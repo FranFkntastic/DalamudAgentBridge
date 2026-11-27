@@ -66,6 +66,10 @@ owned operation. When structured position and progress cannot explain a pathing
 failure, `bridge_capture_clip` returns a bounded sequence of full-viewport frames
 paired with situation snapshots through the existing screenshot permission.
 
+When a client uses more memory than expected, `bridge_memory` reports the process,
+shared GC heap, non-GC estimate, machine commit headroom, and growth since DAB
+loaded, which separates a heavy baseline from a leak before any plugin bisect.
+
 Use `bridge_specialists` before delegating to another automation plugin. Its
 read-only catalog exposes exact installed versions, compatibility, busy state,
 typed parameters, and risk labels. After the user enables specialist automation

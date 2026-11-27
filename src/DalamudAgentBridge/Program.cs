@@ -109,6 +109,7 @@ var allowedCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "install-plugin",
     "install-dev-plugin",
     "get-situation",
+    "get-memory",
     "get-navigation",
     "navigate-to",
     "cancel-navigation",
@@ -137,6 +138,26 @@ app.MapGet("/api/bridges/{id}/situation", async (
     catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
     {
         return Results.Problem($"Situation read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapGet("/api/bridges/{id}/memory", async (
+    string id,
+    BridgeRegistry registry,
+    NamedPipeBridgeClient pipe,
+    CancellationToken cancellationToken) =>
+{
+    var instance = registry.Find(id);
+    if (instance == null)
+        return Results.NotFound(new { success = false, message = "Bridge instance was not found." });
+    try
+    {
+        var response = await pipe.SendAsync(instance, "get-memory", null, cancellationToken).ConfigureAwait(false);
+        return response.Success ? Results.Ok(response) : Results.BadRequest(response);
+    }
+    catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+    {
+        return Results.Problem($"Memory read failed: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 

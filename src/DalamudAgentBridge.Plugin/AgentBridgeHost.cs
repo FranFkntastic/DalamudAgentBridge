@@ -54,6 +54,7 @@ public sealed class AgentBridgeHost : IDisposable
     private readonly Func<string, LifestreamLoginSubmissionResult> beginLogin;
     private readonly Func<string, SlashCommandSubmission> sendChatLine;
     private readonly Func<long?, int?, ChatLogRead> readChatLog;
+    private readonly Func<MemoryDiagnosticsSnapshot> getMemoryDiagnostics;
     private readonly AgentBridgeCommandRouter router = new();
     private readonly AgentBridgeSurfaceRegistry surfaceRegistry = new();
     private readonly SharedAgentBridgeHost host;
@@ -103,7 +104,8 @@ public sealed class AgentBridgeHost : IDisposable
         Func<IReadOnlyList<AgentBridgeActionDescriptor>> getActionCatalog,
         Func<long> getActionCatalogRevision,
         Func<string, SlashCommandSubmission> sendChatLine,
-        Func<long?, int?, ChatLogRead> readChatLog)
+        Func<long?, int?, ChatLogRead> readChatLog,
+        Func<MemoryDiagnosticsSnapshot> getMemoryDiagnostics)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginInternalName);
         this.configuration = configuration;
@@ -143,6 +145,7 @@ public sealed class AgentBridgeHost : IDisposable
         this.getActionCatalogRevision = getActionCatalogRevision;
         this.sendChatLine = sendChatLine;
         this.readChatLog = readChatLog;
+        this.getMemoryDiagnostics = getMemoryDiagnostics;
         pipeName = $"{pluginInternalName}.{Environment.ProcessId}";
         profile = AgentBridgeProfileIdentity.FromPluginConfigDirectory(configDirectory);
         runtimeIdentity = AgentBridgeRuntimeIdentity.FromAssembly(pluginInternalName, Assembly.GetExecutingAssembly(), mainDllPath);
@@ -175,7 +178,7 @@ public sealed class AgentBridgeHost : IDisposable
                 new("snapshot"), new("reviewed-actions"), new("encrypted-capture"), new("leased-plugin-window-measurement"),
                 new("plugin-surface-freshness-stamp"), new(PluginSurfaceWindowMeasurement.PopupCapability),
                 new("plugin-lifecycle"), new("plugin-runtime-identity"), new("plugin-install"), new("plugin-dev-install"), new("plugin-surface-inventory"), new("reversible-plugin-surface-presentation"), new("reflected-plugin-surface-input"), new("pre-login"), new("character-provisioning-observation"), new("chat", 2), new("chat-log"),
-                new("situation", 2), new("navigation"), new("specialist-cockpit"), new("penumbra-crash-reporter"),
+                new("situation", 2), new("navigation"), new("specialist-cockpit"), new("penumbra-crash-reporter"), new("memory-diagnostics"),
             ],
             surfaceRegistry.Snapshot(),
             getCaptureSurfaces(),
@@ -201,7 +204,7 @@ public sealed class AgentBridgeHost : IDisposable
             "capture-plugin-surface", "measure-plugin-surface-window",
             "get-situation", "get-navigation", "navigate-to", "cancel-navigation",
             "get-specialists", "start-specialist", "cancel-specialist",
-            "send-chat", "get-chat-log",
+            "send-chat", "get-chat-log", "get-memory",
         ];
         foreach (var command in commands)
             router.Register(command, HandleProductRequestAsync);
@@ -218,6 +221,9 @@ public sealed class AgentBridgeHost : IDisposable
                 return AgentBridgeResponse.Ok("Client snapshot captured.", await OnFrameworkAsync(createSnapshot).ConfigureAwait(false));
             case "get-situation":
                 return AgentBridgeResponse.Ok("Current character situation captured.", await OnFrameworkAsync(createSituation).ConfigureAwait(false));
+            case "get-memory":
+                // Process and GC counters are thread-safe; skipping the framework thread keeps this readable during loads and pre-login.
+                return AgentBridgeResponse.Ok("Memory diagnostics captured.", getMemoryDiagnostics());
             case "get-navigation":
                 return AgentBridgeResponse.Ok("Navigation state captured.", await OnFrameworkAsync(getNavigation).ConfigureAwait(false));
             case "navigate-to":
