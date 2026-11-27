@@ -37,6 +37,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IPartyList partyList;
     private readonly IGameGui gameGui;
     private readonly ChatLogBuffer chatLogBuffer = new();
+    private readonly MemoryDiagnosticsMonitor memoryDiagnostics = new();
     private readonly Configuration configuration;
     private readonly AgentBridgeViewportCaptureService viewportCapture;
     private readonly AgentBridgeHost bridgeHost;
@@ -190,7 +191,8 @@ public sealed class Plugin : IDalamudPlugin
             reviewRegistry.ActionCatalog,
             () => reviewRegistry.CatalogRevision,
             SendChatLine,
-            chatLogBuffer.Read);
+            chatLogBuffer.Read,
+            memoryDiagnostics.Snapshot);
         bridgeHost.Start();
         commandManager.AddHandler(commandName, new CommandInfo(OnCommand)
         {
@@ -242,6 +244,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginSurfaceInputPump.Dispose();
         surfaceMeasurement.Dispose();
         pluginSurfacePresentation.Dispose();
+        memoryDiagnostics.Dispose();
         sharedObservationHost?.Dispose();
         pluginInterface.UiBuilder.Draw -= Draw;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;

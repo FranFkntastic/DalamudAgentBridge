@@ -79,6 +79,14 @@ public sealed class AgentBridgeClient
         return receipt.Clone();
     }
 
+    public async Task<JsonElement> GetMemoryAsync(BridgeTargetSelector selector, CancellationToken cancellationToken)
+    {
+        var response = await pipe.SendAsync(Resolve(selector), "get-memory", null, cancellationToken).ConfigureAwait(false);
+        if (!response.Success || response.Receipt is not { } receipt)
+            throw new InvalidOperationException(response.Message);
+        return receipt.Clone();
+    }
+
     public async Task<JsonElement> GetNavigationAsync(BridgeTargetSelector selector, CancellationToken cancellationToken)
     {
         var response = await pipe.SendAsync(Resolve(selector), "get-navigation", null, cancellationToken).ConfigureAwait(false);

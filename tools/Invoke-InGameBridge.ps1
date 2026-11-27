@@ -11,7 +11,7 @@ param(
         'enable-plugin', 'disable-plugin', 'install-plugin', 'install-dev-plugin',
         'get-situation', 'get-navigation', 'navigate-to', 'cancel-navigation',
         'get-specialists', 'start-specialist', 'cancel-specialist',
-        'send-chat', 'get-chat-log')]
+        'send-chat', 'get-chat-log', 'get-memory')]
     [string]$Command = 'hello',
     [string]$Target,
     [string]$ArgumentsJson,
